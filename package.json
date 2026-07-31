@@ -5,6 +5,7 @@
     "main": "api.js",
     "type": "module",
     "scripts": {
+        "start": "node server.js",
         "html": "python docs/apidoc.py",
         "lint": "eslint . --config .eslint.config.js"
     },
@@ -23,7 +24,9 @@
         "url": "https://github.com/seiya-npm/terabox-api/issues"
     },
     "dependencies": {
+        "cors": "^2.8.5",
         "crc-32": "^1.2.2",
+        "express": "^4.19.2",
         "filesize": "^11.0.22",
         "tough-cookie": "^6.0.2",
         "undici": "^8.9.0"
