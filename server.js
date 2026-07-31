@@ -126,6 +126,17 @@ app.get('/parse', async (req, res) => {
     const ndusToken = process.env.TERABOX_NDUS || "";
     const tbApp = new TeraBoxApp(ndusToken);
 
+    // Dynamically adjust domain settings to match the user's regional domain
+    if (url.includes('1024tera.com') || url.includes('1024terabox.com') || url.includes('terasharefile.com')) {
+      tbApp.TERABOX_DOMAIN = '1024tera.com';
+      tbApp.params.whost = 'https://www.1024tera.com';
+      tbApp.params.uhost = 'https://c-all.1024tera.com';
+    } else {
+      tbApp.TERABOX_DOMAIN = 'terabox.com';
+      tbApp.params.whost = 'https://www.terabox.com';
+      tbApp.params.uhost = 'https://c-all.terabox.com';
+    }
+
     console.log(`Resolving TeraBox URL: ${url} (shorturl: ${shortUrl})...`);
     const listData = await tbApp.shortUrlList(shortUrl);
 

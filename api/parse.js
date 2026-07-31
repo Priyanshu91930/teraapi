@@ -123,6 +123,17 @@ export default async function handler(req, res) {
     const ndusToken = process.env.TERABOX_NDUS || "";
     const app = new TeraBoxApp(ndusToken);
 
+    // Dynamically adjust domain settings to match the user's regional domain
+    if (url.includes('1024tera.com') || url.includes('1024terabox.com') || url.includes('terasharefile.com')) {
+      app.TERABOX_DOMAIN = '1024tera.com';
+      app.params.whost = 'https://www.1024tera.com';
+      app.params.uhost = 'https://c-all.1024tera.com';
+    } else {
+      app.TERABOX_DOMAIN = 'terabox.com';
+      app.params.whost = 'https://www.terabox.com';
+      app.params.uhost = 'https://c-all.terabox.com';
+    }
+
     const listData = await app.shortUrlList(shortUrl);
 
     if (listData.errno !== 0) {
