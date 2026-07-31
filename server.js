@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { TeraBoxApp } from './api.js';
+import { youtube, igdl, ttdl, fbdown } from 'btch-downloader';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -25,17 +26,99 @@ app.get('/parse', async (req, res) => {
   }
 
   try {
+    const lowerUrl = url.toLowerCase();
+
+    // 1. YouTube Downloader
+    if (lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) {
+      console.log(`Resolving YouTube URL: ${url}...`);
+      const yt = await youtube(url);
+      if (!yt.status) {
+        throw new Error(yt.message || 'YouTube resolution failed');
+      }
+      return res.status(200).json({
+        list: [{
+          name: yt.title || 'YouTube_Video.mp4',
+          size: 'Unknown',
+          thumbnail: yt.thumbnail || '',
+          dlink: yt.mp4 || yt.mp3 || '',
+        }]
+      });
+    }
+
+    // 2. Instagram Downloader
+    if (lowerUrl.includes('instagram.com')) {
+      console.log(`Resolving Instagram URL: ${url}...`);
+      const ig = await igdl(url);
+      if (!ig.status) {
+        throw new Error(ig.message || 'Instagram resolution failed');
+      }
+      const first = ig.result && ig.result[0];
+      if (!first) {
+        throw new Error('No media files found in this Instagram post');
+      }
+      return res.status(200).json({
+        list: [{
+          name: 'Instagram_Video.mp4',
+          size: 'Unknown',
+          thumbnail: first.thumbnail || '',
+          dlink: first.url || '',
+        }]
+      });
+    }
+
+    // 3. TikTok Downloader
+    if (lowerUrl.includes('tiktok.com')) {
+      console.log(`Resolving TikTok URL: ${url}...`);
+      const tt = await ttdl(url);
+      if (!tt.status) {
+        throw new Error(tt.message || 'TikTok resolution failed');
+      }
+      const videoUrl = Array.isArray(tt.video) ? tt.video[0] : tt.video;
+      if (!videoUrl) {
+        throw new Error('No video found in this TikTok');
+      }
+      return res.status(200).json({
+        list: [{
+          name: tt.title || 'TikTok_Video.mp4',
+          size: 'Unknown',
+          thumbnail: tt.thumbnail || '',
+          dlink: videoUrl,
+        }]
+      });
+    }
+
+    // 4. Facebook Downloader
+    if (lowerUrl.includes('facebook.com') || lowerUrl.includes('fb.watch') || lowerUrl.includes('fb.gg')) {
+      console.log(`Resolving Facebook URL: ${url}...`);
+      const fb = await fbdown(url);
+      if (!fb.status) {
+        throw new Error(fb.message || 'Facebook resolution failed');
+      }
+      const videoUrl = fb.HD || fb.Normal_video;
+      if (!videoUrl) {
+        throw new Error('No video found in this Facebook post');
+      }
+      return res.status(200).json({
+        list: [{
+          name: fb.title || 'Facebook_Video.mp4',
+          size: 'Unknown',
+          thumbnail: '',
+          dlink: videoUrl,
+        }]
+      });
+    }
+
+    // Default to TeraBox
     const match = url.match(/\/s\/([A-Za-z0-9_-]+)/);
     if (!match) {
-      return res.status(400).json({ error: "Invalid share link. Please paste a valid TeraBox link." });
+      return res.status(400).json({ error: "Invalid share link. Please paste a valid TeraBox, YouTube, Instagram, Facebook, or TikTok link." });
     }
     const shortUrl = match[1];
 
-    // NDUS token can be loaded from env or left empty
     const ndusToken = process.env.TERABOX_NDUS || "";
     const tbApp = new TeraBoxApp(ndusToken);
 
-    console.log(`Resolving URL: ${url} (shorturl: ${shortUrl})...`);
+    console.log(`Resolving TeraBox URL: ${url} (shorturl: ${shortUrl})...`);
     const listData = await tbApp.shortUrlList(shortUrl);
 
     if (listData.errno !== 0) {
@@ -63,6 +146,5 @@ app.get('/parse', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`TeraBox resolution API server is running on http://localhost:${PORT}`);
-  console.log(`Press Ctrl+C to stop.`);
+  console.log(`Local parse server running on port ${PORT}`);
 });
