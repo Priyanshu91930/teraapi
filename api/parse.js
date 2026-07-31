@@ -36,12 +36,20 @@ export default async function handler(req, res) {
         throw new Error(yt.message || 'YouTube resolution failed');
       }
       return res.status(200).json({
-        list: [{
-          name: yt.title || 'YouTube_Video.mp4',
-          size: 'Unknown',
-          thumbnail: yt.thumbnail || '',
-          dlink: yt.mp4 || yt.mp3 || '',
-        }]
+        list: [
+          {
+            name: `${yt.title || 'YouTube_Video'} (Video - MP4)`,
+            size: 'Unknown',
+            thumbnail: yt.thumbnail || '',
+            dlink: yt.mp4 || '',
+          },
+          {
+            name: `${yt.title || 'YouTube_Video'} (Audio - MP3)`,
+            size: 'Unknown',
+            thumbnail: yt.thumbnail || '',
+            dlink: yt.mp3 || '',
+          }
+        ]
       });
     }
 
