@@ -149,8 +149,10 @@ export default async function handler(req, res) {
       // ignore
     }
 
-    // 2. If anonymous fails or returns error, fallback to logged-in NDUS session
-    if (!listData || listData.errno !== 0) {
+    // 2. If anonymous fails, returns error, or lacks a dlink (direct download link), fallback to logged-in NDUS session
+    const hasDlink = listData && listData.list && listData.list[0] && listData.list[0].dlink;
+    if (!listData || listData.errno !== 0 || !hasDlink) {
+      console.log(`[Parse] Anonymous resolution returned no dlink. Falling back to logged-in NDUS session...`);
       const ndusToken = process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
       if (ndusToken) {
         const app = new TeraBoxApp(ndusToken);
@@ -160,9 +162,13 @@ export default async function handler(req, res) {
         app.params.uhost = anonApp.params.uhost;
 
         try {
-          listData = await app.shortUrlList(strippedShortUrl);
+          const ndusData = await app.shortUrlList(strippedShortUrl);
+          console.log(`[Parse] NDUS session response:`, JSON.stringify(ndusData));
+          if (ndusData && ndusData.errno === 0) {
+            listData = ndusData;
+          }
         } catch (e) {
-          // ignore
+          console.error(`[Parse] NDUS session failed with error:`, e.message);
         }
       }
     }

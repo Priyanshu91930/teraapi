@@ -152,8 +152,9 @@ app.get('/parse', async (req, res) => {
       // ignore
     }
 
-    // 2. If anonymous fails or returns error, fallback to logged-in NDUS session
-    if (!listData || listData.errno !== 0) {
+    // 2. If anonymous fails, returns error, or lacks a dlink (direct download link), fallback to logged-in NDUS session
+    const hasDlink = listData && listData.list && listData.list[0] && listData.list[0].dlink;
+    if (!listData || listData.errno !== 0 || !hasDlink) {
       const ndusToken = process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
       if (ndusToken) {
         const app = new TeraBoxApp(ndusToken);
@@ -163,7 +164,10 @@ app.get('/parse', async (req, res) => {
         app.params.uhost = anonApp.params.uhost;
 
         try {
-          listData = await app.shortUrlList(strippedShortUrl);
+          const ndusData = await app.shortUrlList(strippedShortUrl);
+          if (ndusData && ndusData.errno === 0) {
+            listData = ndusData;
+          }
         } catch (e) {
           // ignore
         }
