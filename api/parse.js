@@ -114,11 +114,22 @@ export default async function handler(req, res) {
     }
 
     // Default to TeraBox
-    const match = url.match(/\/s\/([A-Za-z0-9_-]+)/);
-    if (!match) {
+    let shortUrl = "";
+    const sMatch = url.match(/\/s\/([A-Za-z0-9_-]+)/);
+    const surlMatch = url.match(/surl=([A-Za-z0-9_-]+)/);
+
+    if (sMatch) {
+      shortUrl = sMatch[1];
+    } else if (surlMatch) {
+      shortUrl = surlMatch[1];
+      if (!shortUrl.startsWith('1')) {
+        shortUrl = '1' + shortUrl;
+      }
+    }
+
+    if (!shortUrl) {
       return res.status(400).json({ error: "Invalid share link. Please paste a valid TeraBox, YouTube, Instagram, Facebook, or TikTok link." });
     }
-    const shortUrl = match[1];
 
     const ndusToken = process.env.TERABOX_NDUS || "";
     const app = new TeraBoxApp(ndusToken);
