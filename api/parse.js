@@ -151,8 +151,12 @@ export default async function handler(req, res) {
       console.log("Checking login status with NDUS token...");
       const loginCheck = await app.getCurrentUserInfo().catch(err => ({ error: err.message }));
       console.log("Current User Info:", JSON.stringify(loginCheck));
+      
+      console.log("Checking shortUrlInfo for the shortUrl...");
+      const infoCheck = await app.shortUrlInfo(shortUrl).catch(err => ({ error: err.message }));
+      console.log("shortUrlInfo Response:", JSON.stringify(infoCheck));
     } catch (e) {
-      console.error("Failed to check user info:", e);
+      console.error("Failed to check user info/link info:", e);
     }
 
     console.log(`Sending shortUrl to TeraBox API: ${shortUrl}`);
