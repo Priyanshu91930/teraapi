@@ -181,7 +181,7 @@ app.get('/parse', async (req, res) => {
 
     const formattedList = (listData.list || []).map((file) => ({
       name: file.server_filename || 'video.mp4',
-      size: typeof file.size === 'number' ? formatBytes(file.size) : file.size || 'Unknown',
+      size: file.size ? formatBytes(Number(file.size)) : 'Unknown',
       thumbnail: file.thumbs?.url3 || file.thumbs?.url1 || '',
       dlink: file.dlink || '',
     }));
