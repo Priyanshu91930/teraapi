@@ -133,7 +133,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Invalid share link. Please paste a valid TeraBox, YouTube, Instagram, Facebook, or TikTok link." });
     }
 
-    const ndusToken = process.env.TERABOX_NDUS || "";
+    const ndusToken = process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
     const app = new TeraBoxApp(ndusToken);
 
     // Dynamically adjust domain settings to match the user's regional domain
