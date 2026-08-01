@@ -159,19 +159,46 @@ export default async function handler(req, res) {
       console.error("Failed to check user info/link info:", e);
     }
 
-    const baseHost = cleanUrl.includes('1024tera.com') || cleanUrl.includes('1024terabox.com') || cleanUrl.includes('terasharefile.com')
-      ? 'https://www.1024tera.com'
-      : 'https://www.terabox.com';
-    app.params.whost = baseHost;
-    console.log(`Forcing API host to: ${app.params.whost}`);
+    // 1. Try resolving anonymously first to avoid regional cluster redirects (like dm.1024tera.com)
+    console.log(`[Parse] Attempting anonymous resolution for shortUrl: ${shortUrl}`);
+    const anonApp = new TeraBoxApp("");
+    anonApp.TERABOX_DOMAIN = cleanUrl.includes('1024tera.com') || cleanUrl.includes('1024terabox.com') || cleanUrl.includes('terasharefile.com')
+      ? '1024tera.com'
+      : 'terabox.com';
+    anonApp.params.whost = `https://www.${anonApp.TERABOX_DOMAIN}`;
+    anonApp.params.uhost = `https://c-all.${anonApp.TERABOX_DOMAIN}`;
 
-    console.log(`Sending shortUrl to TeraBox API: ${shortUrl}`);
-    const listData = await app.shortUrlList(shortUrl);
-    console.log(`TeraBox API response:`, JSON.stringify(listData));
+    let listData;
+    try {
+      listData = await anonApp.shortUrlList(shortUrl);
+      console.log(`[Parse] Anonymous response:`, JSON.stringify(listData));
+    } catch (e) {
+      console.log(`[Parse] Anonymous resolution failed with error:`, e.message);
+    }
 
-    if (listData.errno !== 0) {
-      console.error(`TeraBox API returned error code: ${listData.errno}`);
-      return res.status(400).json({ error: `TeraBox API returned error code ${listData.errno}` });
+    // 2. If anonymous fails or returns error, fallback to logged-in NDUS session
+    if (!listData || listData.errno !== 0) {
+      console.log(`[Parse] Falling back to logged-in NDUS session...`);
+      const ndusToken = process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
+      if (ndusToken) {
+        const app = new TeraBoxApp(ndusToken);
+        app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
+        app.params.whost = anonApp.params.whost;
+        app.params.uhost = anonApp.params.uhost;
+
+        try {
+          listData = await app.shortUrlList(shortUrl);
+          console.log(`[Parse] NDUS session response:`, JSON.stringify(listData));
+        } catch (e) {
+          console.error(`[Parse] NDUS session failed with error:`, e.message);
+        }
+      }
+    }
+
+    if (!listData || listData.errno !== 0) {
+      const errCode = listData ? listData.errno : 'Unknown';
+      console.error(`TeraBox API returned error code: ${errCode}`);
+      return res.status(400).json({ error: `TeraBox API returned error code ${errCode}` });
     }
 
     const formattedList = (listData.list || []).map((file) => ({
