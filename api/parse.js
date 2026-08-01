@@ -159,6 +159,35 @@ export default async function handler(req, res) {
       console.error("Failed to check user info/link info:", e);
     }
 
+    // 0. Directly fetch HTML and extract templateData
+    try {
+      const targetUrl = cleanUrl.includes('surl=') ? cleanUrl : `https://www.1024tera.com/sharing/link?surl=${shortUrl.replace(/^1/, '')}`;
+      console.log(`[HTML Parse] Fetching HTML from: ${targetUrl}`);
+      const htmlRes = await fetch(targetUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9'
+        }
+      });
+      const htmlText = await htmlRes.text();
+      const tdataRegex = /<script>var templateData = (.*);<\/script>/;
+      const match = htmlText.match(tdataRegex);
+      if (match) {
+        const rawJson = match[1].split(';</script>')[0];
+        console.log(`[HTML Parse] Found templateData length: ${rawJson.length}`);
+        const tdata = JSON.parse(rawJson);
+        console.log(`[HTML Parse] Keys in templateData:`, Object.keys(tdata));
+        if (tdata.file_list) {
+          console.log(`[HTML Parse] Found file_list with ${tdata.file_list.length} files.`);
+        }
+      } else {
+        console.log(`[HTML Parse] templateData script block not found in HTML.`);
+      }
+    } catch (e) {
+      console.error(`[HTML Parse] Failed to extract templateData:`, e.message);
+    }
+
     // 1. Try resolving anonymously first to avoid regional cluster redirects (like dm.1024tera.com)
     console.log(`[Parse] Attempting anonymous resolution for shortUrl: ${shortUrl}`);
     const anonApp = new TeraBoxApp("");
