@@ -26,12 +26,14 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "url query parameter is required" });
   }
 
+  const cleanUrl = url.trim().replace(/[\s\r\n\t]/g, '');
+
   try {
-    const lowerUrl = url.toLowerCase();
+    const lowerUrl = cleanUrl.toLowerCase();
 
     // 1. YouTube Downloader
     if (lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) {
-      const yt = await youtube(url);
+      const yt = await youtube(cleanUrl);
       if (!yt.status) {
         throw new Error(yt.message || 'YouTube resolution failed');
       }
@@ -55,7 +57,7 @@ export default async function handler(req, res) {
 
     // 2. Instagram Downloader
     if (lowerUrl.includes('instagram.com')) {
-      const ig = await igdl(url);
+      const ig = await igdl(cleanUrl);
       if (!ig.status) {
         throw new Error(ig.message || 'Instagram resolution failed');
       }
@@ -75,7 +77,7 @@ export default async function handler(req, res) {
 
     // 3. TikTok Downloader
     if (lowerUrl.includes('tiktok.com')) {
-      const tt = await ttdl(url);
+      const tt = await ttdl(cleanUrl);
       if (!tt.status) {
         throw new Error(tt.message || 'TikTok resolution failed');
       }
@@ -95,7 +97,7 @@ export default async function handler(req, res) {
 
     // 4. Facebook Downloader
     if (lowerUrl.includes('facebook.com') || lowerUrl.includes('fb.watch') || lowerUrl.includes('fb.gg')) {
-      const fb = await fbdown(url);
+      const fb = await fbdown(cleanUrl);
       if (!fb.status) {
         throw new Error(fb.message || 'Facebook resolution failed');
       }
@@ -115,8 +117,8 @@ export default async function handler(req, res) {
 
     // Default to TeraBox
     let shortUrl = "";
-    const sMatch = url.match(/\/s\/([A-Za-z0-9_-]+)/);
-    const surlMatch = url.match(/surl=([A-Za-z0-9_-]+)/);
+    const sMatch = cleanUrl.match(/\/s\/([A-Za-z0-9_-]+)/);
+    const surlMatch = cleanUrl.match(/surl=([A-Za-z0-9_-]+)/);
 
     if (sMatch) {
       shortUrl = sMatch[1];
@@ -135,7 +137,7 @@ export default async function handler(req, res) {
     const app = new TeraBoxApp(ndusToken);
 
     // Dynamically adjust domain settings to match the user's regional domain
-    if (url.includes('1024tera.com') || url.includes('1024terabox.com') || url.includes('terasharefile.com')) {
+    if (cleanUrl.includes('1024tera.com') || cleanUrl.includes('1024terabox.com') || cleanUrl.includes('terasharefile.com')) {
       app.TERABOX_DOMAIN = '1024tera.com';
       app.params.whost = 'https://www.1024tera.com';
       app.params.uhost = 'https://c-all.1024tera.com';

@@ -25,13 +25,15 @@ app.get('/parse', async (req, res) => {
     return res.status(400).json({ error: "url query parameter is required" });
   }
 
+  const cleanUrl = url.trim().replace(/[\s\r\n\t]/g, '');
+
   try {
-    const lowerUrl = url.toLowerCase();
+    const lowerUrl = cleanUrl.toLowerCase();
 
     // 1. YouTube Downloader
     if (lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) {
-      console.log(`Resolving YouTube URL: ${url}...`);
-      const yt = await youtube(url);
+      console.log(`Resolving YouTube URL: ${cleanUrl}...`);
+      const yt = await youtube(cleanUrl);
       if (!yt.status) {
         throw new Error(yt.message || 'YouTube resolution failed');
       }
@@ -55,8 +57,8 @@ app.get('/parse', async (req, res) => {
 
     // 2. Instagram Downloader
     if (lowerUrl.includes('instagram.com')) {
-      console.log(`Resolving Instagram URL: ${url}...`);
-      const ig = await igdl(url);
+      console.log(`Resolving Instagram URL: ${cleanUrl}...`);
+      const ig = await igdl(cleanUrl);
       if (!ig.status) {
         throw new Error(ig.message || 'Instagram resolution failed');
       }
@@ -76,8 +78,8 @@ app.get('/parse', async (req, res) => {
 
     // 3. TikTok Downloader
     if (lowerUrl.includes('tiktok.com')) {
-      console.log(`Resolving TikTok URL: ${url}...`);
-      const tt = await ttdl(url);
+      console.log(`Resolving TikTok URL: ${cleanUrl}...`);
+      const tt = await ttdl(cleanUrl);
       if (!tt.status) {
         throw new Error(tt.message || 'TikTok resolution failed');
       }
@@ -97,8 +99,8 @@ app.get('/parse', async (req, res) => {
 
     // 4. Facebook Downloader
     if (lowerUrl.includes('facebook.com') || lowerUrl.includes('fb.watch') || lowerUrl.includes('fb.gg')) {
-      console.log(`Resolving Facebook URL: ${url}...`);
-      const fb = await fbdown(url);
+      console.log(`Resolving Facebook URL: ${cleanUrl}...`);
+      const fb = await fbdown(cleanUrl);
       if (!fb.status) {
         throw new Error(fb.message || 'Facebook resolution failed');
       }
@@ -118,8 +120,8 @@ app.get('/parse', async (req, res) => {
 
     // Default to TeraBox
     let shortUrl = "";
-    const sMatch = url.match(/\/s\/([A-Za-z0-9_-]+)/);
-    const surlMatch = url.match(/surl=([A-Za-z0-9_-]+)/);
+    const sMatch = cleanUrl.match(/\/s\/([A-Za-z0-9_-]+)/);
+    const surlMatch = cleanUrl.match(/surl=([A-Za-z0-9_-]+)/);
 
     if (sMatch) {
       shortUrl = sMatch[1];
@@ -138,7 +140,7 @@ app.get('/parse', async (req, res) => {
     const tbApp = new TeraBoxApp(ndusToken);
 
     // Dynamically adjust domain settings to match the user's regional domain
-    if (url.includes('1024tera.com') || url.includes('1024terabox.com') || url.includes('terasharefile.com')) {
+    if (cleanUrl.includes('1024tera.com') || cleanUrl.includes('1024terabox.com') || cleanUrl.includes('terasharefile.com')) {
       tbApp.TERABOX_DOMAIN = '1024tera.com';
       tbApp.params.whost = 'https://www.1024tera.com';
       tbApp.params.uhost = 'https://c-all.1024tera.com';
@@ -148,7 +150,7 @@ app.get('/parse', async (req, res) => {
       tbApp.params.uhost = 'https://c-all.terabox.com';
     }
 
-    console.log(`Resolving TeraBox URL: ${url} (shorturl: ${shortUrl})...`);
+    console.log(`Resolving TeraBox URL: ${cleanUrl} (shorturl: ${shortUrl})...`);
     const listData = await tbApp.shortUrlList(shortUrl);
 
     if (listData.errno !== 0) {
