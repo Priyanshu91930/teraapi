@@ -147,6 +147,14 @@ export default async function handler(req, res) {
       app.params.uhost = 'https://c-all.terabox.com';
     }
 
+    try {
+      console.log("Checking login status with NDUS token...");
+      const loginCheck = await app.getCurrentUserInfo().catch(err => ({ error: err.message }));
+      console.log("Current User Info:", JSON.stringify(loginCheck));
+    } catch (e) {
+      console.error("Failed to check user info:", e);
+    }
+
     console.log(`Sending shortUrl to TeraBox API: ${shortUrl}`);
     const listData = await app.shortUrlList(shortUrl);
     console.log(`TeraBox API response:`, JSON.stringify(listData));
