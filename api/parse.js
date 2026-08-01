@@ -147,9 +147,12 @@ export default async function handler(req, res) {
       app.params.uhost = 'https://c-all.terabox.com';
     }
 
+    console.log(`Sending shortUrl to TeraBox API: ${shortUrl}`);
     const listData = await app.shortUrlList(shortUrl);
+    console.log(`TeraBox API response:`, JSON.stringify(listData));
 
     if (listData.errno !== 0) {
+      console.error(`TeraBox API returned error code: ${listData.errno}`);
       return res.status(400).json({ error: `TeraBox API returned error code ${listData.errno}` });
     }
 
@@ -160,10 +163,12 @@ export default async function handler(req, res) {
       dlink: file.dlink || '',
     }));
 
+    console.log(`Successfully resolved ${formattedList.length} files.`);
     return res.status(200).json({
       list: formattedList,
     });
   } catch (error) {
+    console.error("Exception caught in parse handler:", error);
     return res.status(500).json({
       error: error.message || "Failed to resolve link. Please verify the URL and try again.",
     });
