@@ -191,6 +191,7 @@ export default async function handler(req, res) {
     // 1. Try resolving anonymously first to avoid regional cluster redirects (like dm.1024tera.com)
     console.log(`[Parse] Attempting anonymous resolution for shortUrl: ${shortUrl}`);
     const anonApp = new TeraBoxApp("");
+    anonApp.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
     anonApp.TERABOX_DOMAIN = cleanUrl.includes('1024tera.com') || cleanUrl.includes('1024terabox.com') || cleanUrl.includes('terasharefile.com')
       ? '1024tera.com'
       : 'terabox.com';
@@ -211,6 +212,7 @@ export default async function handler(req, res) {
       const ndusToken = process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
       if (ndusToken) {
         const app = new TeraBoxApp(ndusToken);
+        app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
         app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
         app.params.whost = anonApp.params.whost;
         app.params.uhost = anonApp.params.uhost;
