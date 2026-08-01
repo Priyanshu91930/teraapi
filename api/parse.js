@@ -200,10 +200,25 @@ export default async function handler(req, res) {
 
     let listData;
     try {
+      console.log(`[Parse] Querying with raw shortUrl: ${shortUrl}`);
       listData = await anonApp.shortUrlList(shortUrl);
-      console.log(`[Parse] Anonymous response:`, JSON.stringify(listData));
+      console.log(`[Parse] Raw shortUrl response:`, JSON.stringify(listData));
     } catch (e) {
-      console.log(`[Parse] Anonymous resolution failed with error:`, e.message);
+      console.log(`[Parse] Raw shortUrl query failed:`, e.message);
+    }
+
+    if (!listData || listData.errno !== 0) {
+      const strippedToken = shortUrl.replace(/^1/, '');
+      console.log(`[Parse] Querying with stripped shortUrl (no leading 1): ${strippedToken}`);
+      try {
+        const strippedData = await anonApp.shortUrlList(strippedToken);
+        console.log(`[Parse] Stripped shortUrl response:`, JSON.stringify(strippedData));
+        if (strippedData && strippedData.errno === 0) {
+          listData = strippedData;
+        }
+      } catch (e) {
+        console.log(`[Parse] Stripped shortUrl query failed:`, e.message);
+      }
     }
 
     // 2. If anonymous fails or returns error, fallback to logged-in NDUS session
