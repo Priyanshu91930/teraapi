@@ -159,6 +159,12 @@ export default async function handler(req, res) {
       console.error("Failed to check user info/link info:", e);
     }
 
+    const baseHost = cleanUrl.includes('1024tera.com') || cleanUrl.includes('1024terabox.com') || cleanUrl.includes('terasharefile.com')
+      ? 'https://www.1024tera.com'
+      : 'https://www.terabox.com';
+    app.params.whost = baseHost;
+    console.log(`Forcing API host to: ${app.params.whost}`);
+
     console.log(`Sending shortUrl to TeraBox API: ${shortUrl}`);
     const listData = await app.shortUrlList(shortUrl);
     console.log(`TeraBox API response:`, JSON.stringify(listData));

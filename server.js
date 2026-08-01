@@ -150,6 +150,11 @@ app.get('/parse', async (req, res) => {
       tbApp.params.uhost = 'https://c-all.terabox.com';
     }
 
+    const baseHost = cleanUrl.includes('1024tera.com') || cleanUrl.includes('1024terabox.com') || cleanUrl.includes('terasharefile.com')
+      ? 'https://www.1024tera.com'
+      : 'https://www.terabox.com';
+    tbApp.params.whost = baseHost;
+
     console.log(`Resolving TeraBox URL: ${cleanUrl} (shorturl: ${shortUrl})...`);
     const listData = await tbApp.shortUrlList(shortUrl);
 
