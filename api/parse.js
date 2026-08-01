@@ -124,72 +124,16 @@ export default async function handler(req, res) {
       shortUrl = sMatch[1];
     } else if (surlMatch) {
       shortUrl = surlMatch[1];
-      if (!shortUrl.startsWith('1')) {
-        shortUrl = '1' + shortUrl;
-      }
     }
 
     if (!shortUrl) {
       return res.status(400).json({ error: "Invalid share link. Please paste a valid TeraBox, YouTube, Instagram, Facebook, or TikTok link." });
     }
 
-    const ndusToken = process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
-    const app = new TeraBoxApp(ndusToken);
-
-    // Dynamically adjust domain settings to match the user's regional domain
-    if (cleanUrl.includes('1024tera.com') || cleanUrl.includes('1024terabox.com') || cleanUrl.includes('terasharefile.com')) {
-      app.TERABOX_DOMAIN = '1024tera.com';
-      app.params.whost = 'https://www.1024tera.com';
-      app.params.uhost = 'https://c-all.1024tera.com';
-    } else {
-      app.TERABOX_DOMAIN = 'terabox.com';
-      app.params.whost = 'https://www.terabox.com';
-      app.params.uhost = 'https://c-all.terabox.com';
-    }
-
-    try {
-      console.log("Checking login status with NDUS token...");
-      const loginCheck = await app.getCurrentUserInfo().catch(err => ({ error: err.message }));
-      console.log("Current User Info:", JSON.stringify(loginCheck));
-      
-      console.log("Checking shortUrlInfo for the shortUrl...");
-      const infoCheck = await app.shortUrlInfo(shortUrl).catch(err => ({ error: err.message }));
-      console.log("shortUrlInfo Response:", JSON.stringify(infoCheck));
-    } catch (e) {
-      console.error("Failed to check user info/link info:", e);
-    }
-
-    // 0. Directly fetch HTML and extract templateData
-    try {
-      const targetUrl = cleanUrl.includes('surl=') ? cleanUrl : `https://www.1024tera.com/sharing/link?surl=${shortUrl.replace(/^1/, '')}`;
-      console.log(`[HTML Parse] Fetching HTML from: ${targetUrl}`);
-      const htmlRes = await fetch(targetUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.9'
-        }
-      });
-      const htmlText = await htmlRes.text();
-      const tdataRegex = /<script>var templateData = (.*);<\/script>/;
-      const match = htmlText.match(tdataRegex);
-      if (match) {
-        const rawJson = match[1].split(';</script>')[0];
-        console.log(`[HTML Parse] Found templateData length: ${rawJson.length}`);
-        const tdata = JSON.parse(rawJson);
-        console.log(`[HTML Parse] Keys in templateData:`, Object.keys(tdata));
-        if (tdata.file_list) {
-          console.log(`[HTML Parse] Found file_list with ${tdata.file_list.length} files.`);
-        }
-      } else {
-        console.log(`[HTML Parse] templateData script block not found in HTML.`);
-      }
-    } catch (e) {
-      console.error(`[HTML Parse] Failed to extract templateData:`, e.message);
-    }
+    // Always strip the leading '1' from the shortUrl because the /share/list API expects the raw surl token
+    const strippedShortUrl = shortUrl.replace(/^1/, '');
 
     // 1. Try resolving anonymously first to avoid regional cluster redirects (like dm.1024tera.com)
-    console.log(`[Parse] Attempting anonymous resolution for shortUrl: ${shortUrl}`);
     const anonApp = new TeraBoxApp("");
     anonApp.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
     anonApp.TERABOX_DOMAIN = cleanUrl.includes('1024tera.com') || cleanUrl.includes('1024terabox.com') || cleanUrl.includes('terasharefile.com')
@@ -200,30 +144,13 @@ export default async function handler(req, res) {
 
     let listData;
     try {
-      console.log(`[Parse] Querying with raw shortUrl: ${shortUrl}`);
-      listData = await anonApp.shortUrlList(shortUrl);
-      console.log(`[Parse] Raw shortUrl response:`, JSON.stringify(listData));
+      listData = await anonApp.shortUrlList(strippedShortUrl);
     } catch (e) {
-      console.log(`[Parse] Raw shortUrl query failed:`, e.message);
-    }
-
-    if (!listData || listData.errno !== 0) {
-      const strippedToken = shortUrl.replace(/^1/, '');
-      console.log(`[Parse] Querying with stripped shortUrl (no leading 1): ${strippedToken}`);
-      try {
-        const strippedData = await anonApp.shortUrlList(strippedToken);
-        console.log(`[Parse] Stripped shortUrl response:`, JSON.stringify(strippedData));
-        if (strippedData && strippedData.errno === 0) {
-          listData = strippedData;
-        }
-      } catch (e) {
-        console.log(`[Parse] Stripped shortUrl query failed:`, e.message);
-      }
+      // ignore
     }
 
     // 2. If anonymous fails or returns error, fallback to logged-in NDUS session
     if (!listData || listData.errno !== 0) {
-      console.log(`[Parse] Falling back to logged-in NDUS session...`);
       const ndusToken = process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
       if (ndusToken) {
         const app = new TeraBoxApp(ndusToken);
@@ -233,17 +160,15 @@ export default async function handler(req, res) {
         app.params.uhost = anonApp.params.uhost;
 
         try {
-          listData = await app.shortUrlList(shortUrl);
-          console.log(`[Parse] NDUS session response:`, JSON.stringify(listData));
+          listData = await app.shortUrlList(strippedShortUrl);
         } catch (e) {
-          console.error(`[Parse] NDUS session failed with error:`, e.message);
+          // ignore
         }
       }
     }
 
     if (!listData || listData.errno !== 0) {
       const errCode = listData ? listData.errno : 'Unknown';
-      console.error(`TeraBox API returned error code: ${errCode}`);
       return res.status(400).json({ error: `TeraBox API returned error code ${errCode}` });
     }
 
@@ -254,12 +179,10 @@ export default async function handler(req, res) {
       dlink: file.dlink || '',
     }));
 
-    console.log(`Successfully resolved ${formattedList.length} files.`);
     return res.status(200).json({
       list: formattedList,
     });
   } catch (error) {
-    console.error("Exception caught in parse handler:", error);
     return res.status(500).json({
       error: error.message || "Failed to resolve link. Please verify the URL and try again.",
     });

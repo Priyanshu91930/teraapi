@@ -127,31 +127,16 @@ app.get('/parse', async (req, res) => {
       shortUrl = sMatch[1];
     } else if (surlMatch) {
       shortUrl = surlMatch[1];
-      if (!shortUrl.startsWith('1')) {
-        shortUrl = '1' + shortUrl;
-      }
     }
 
     if (!shortUrl) {
       return res.status(400).json({ error: "Invalid share link. Please paste a valid TeraBox, YouTube, Instagram, Facebook, or TikTok link." });
     }
 
-    const ndusToken = process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
-    const tbApp = new TeraBoxApp(ndusToken);
-
-    // Dynamically adjust domain settings to match the user's regional domain
-    if (cleanUrl.includes('1024tera.com') || cleanUrl.includes('1024terabox.com') || cleanUrl.includes('terasharefile.com')) {
-      tbApp.TERABOX_DOMAIN = '1024tera.com';
-      tbApp.params.whost = 'https://www.1024tera.com';
-      tbApp.params.uhost = 'https://c-all.1024tera.com';
-    } else {
-      tbApp.TERABOX_DOMAIN = 'terabox.com';
-      tbApp.params.whost = 'https://www.terabox.com';
-      tbApp.params.uhost = 'https://c-all.terabox.com';
-    }
+    // Always strip the leading '1' from the shortUrl because the /share/list API expects the raw surl token
+    const strippedShortUrl = shortUrl.replace(/^1/, '');
 
     // 1. Try resolving anonymously first to avoid regional cluster redirects (like dm.1024tera.com)
-    console.log(`[Parse] Attempting anonymous resolution for shortUrl: ${shortUrl}`);
     const anonApp = new TeraBoxApp("");
     anonApp.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
     anonApp.TERABOX_DOMAIN = cleanUrl.includes('1024tera.com') || cleanUrl.includes('1024terabox.com') || cleanUrl.includes('terasharefile.com')
@@ -162,15 +147,13 @@ app.get('/parse', async (req, res) => {
 
     let listData;
     try {
-      listData = await anonApp.shortUrlList(shortUrl);
-      console.log(`[Parse] Anonymous response:`, JSON.stringify(listData));
+      listData = await anonApp.shortUrlList(strippedShortUrl);
     } catch (e) {
-      console.log(`[Parse] Anonymous resolution failed with error:`, e.message);
+      // ignore
     }
 
     // 2. If anonymous fails or returns error, fallback to logged-in NDUS session
     if (!listData || listData.errno !== 0) {
-      console.log(`[Parse] Falling back to logged-in NDUS session...`);
       const ndusToken = process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
       if (ndusToken) {
         const app = new TeraBoxApp(ndusToken);
@@ -180,17 +163,15 @@ app.get('/parse', async (req, res) => {
         app.params.uhost = anonApp.params.uhost;
 
         try {
-          listData = await app.shortUrlList(shortUrl);
-          console.log(`[Parse] NDUS session response:`, JSON.stringify(listData));
+          listData = await app.shortUrlList(strippedShortUrl);
         } catch (e) {
-          console.error(`[Parse] NDUS session failed with error:`, e.message);
+          // ignore
         }
       }
     }
 
     if (!listData || listData.errno !== 0) {
       const errCode = listData ? listData.errno : 'Unknown';
-      console.error(`TeraBox API returned error code: ${errCode}`);
       return res.status(400).json({ error: `TeraBox API returned error code ${errCode}` });
     }
 
@@ -201,7 +182,6 @@ app.get('/parse', async (req, res) => {
       dlink: file.dlink || '',
     }));
 
-    console.log(`Successfully resolved ${formattedList.length} files.`);
     return res.status(200).json({
       list: formattedList,
     });
