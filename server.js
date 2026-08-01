@@ -186,8 +186,14 @@ app.get('/parse', async (req, res) => {
       dlink: file.dlink || '',
     }));
 
+    const ndusToken = process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
+
     return res.status(200).json({
       list: formattedList,
+      downloadHeaders: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Cookie': ndusToken ? `ndus=${ndusToken}` : ''
+      }
     });
   } catch (error) {
     console.error("Link resolution failed:", error);
