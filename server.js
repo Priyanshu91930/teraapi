@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { TeraBoxApp } from './api.js';
+import ytdl from '@distube/ytdl-core';
 import { youtube, igdl, ttdl, fbdown } from 'btch-downloader';
 
 const app = express();
@@ -33,21 +34,48 @@ app.get('/parse', async (req, res) => {
     // 1. YouTube Downloader
     if (lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) {
       console.log(`Resolving YouTube URL: ${cleanUrl}...`);
-      const yt = await youtube(cleanUrl);
-      if (!yt.status) {
-        throw new Error(yt.message || 'YouTube resolution failed');
+
+      // Prefer direct googlevideo.com links (faster, no third-party proxy throttling).
+      // ytdl-core sometimes gets bot-blocked on datacenter IPs, so fall back to btch-downloader.
+      let yt = null;
+      try {
+        const info = await ytdl.getInfo(cleanUrl, { requestOptions: { timeout: 20000 } });
+        const video = ytdl.chooseFormat(info.formats, { quality: 'highest', filter: 'audioandvideo' });
+        const audio = ytdl.chooseFormat(info.formats, { quality: 'highestaudio', filter: 'audioonly' });
+        if (video && video.url) {
+          yt = {
+            status: true,
+            title: info.videoDetails.title,
+            thumbnail: (info.videoDetails.thumbnails && info.videoDetails.thumbnails[info.videoDetails.thumbnails.length - 1]?.url) || '',
+            mp4: video.url,
+            mp4Size: video.contentLength,
+            mp3: audio && audio.url ? audio.url : '',
+            mp3Size: audio ? audio.contentLength : 0,
+          };
+        }
+      } catch (e) {
+        console.log(`ytdl-core failed (${e.message || e}), falling back to btch-downloader...`);
       }
+
+      if (!yt || !yt.mp4) {
+        const fb = await youtube(cleanUrl);
+        if (!fb.status) {
+          throw new Error(fb.message || 'YouTube resolution failed');
+        }
+        yt = { ...fb, mp4Size: 0, mp3Size: 0 };
+      }
+
       return res.status(200).json({
         list: [
           {
             name: `${yt.title || 'YouTube_Video'} (Video - MP4)`,
-            size: 'Unknown',
+            size: yt.mp4Size ? formatBytes(Number(yt.mp4Size)) : 'Unknown',
             thumbnail: yt.thumbnail || '',
             dlink: yt.mp4 || '',
           },
           {
             name: `${yt.title || 'YouTube_Video'} (Audio - MP3)`,
-            size: 'Unknown',
+            size: yt.mp3Size ? formatBytes(Number(yt.mp3Size)) : 'Unknown',
             thumbnail: yt.thumbnail || '',
             dlink: yt.mp3 || '',
           }
