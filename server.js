@@ -97,15 +97,23 @@ app.get('/parse', async (req, res) => {
     // 2. Instagram Downloader
     if (lowerUrl.includes('instagram.com')) {
       console.log(`Resolving Instagram URL: ${cleanUrl}...`);
-      const ig = await igdl(cleanUrl);
-      if (!ig.status) {
-        throw new Error(ig.message || 'Instagram resolution failed');
+      let data;
+      try {
+        const apiRes = await fetch(`https://backend1.tioo.eu.org/igdl?url=${encodeURIComponent(cleanUrl)}`);
+        data = await apiRes.json();
+      } catch (err) {
+        // Fallback to SDK
+        const sdkRes = await igdl(cleanUrl);
+        data = sdkRes.result || sdkRes;
       }
-      const first = ig.result && ig.result[0];
+      
+      const list = Array.isArray(data) ? data : (data.result || []);
+      const first = list[0];
       if (!first) {
         throw new Error('No media files found in this Instagram post');
       }
-      let caption = ig.caption || first.caption || '';
+
+      let caption = (data && data.caption) || (first && first.caption) || '';
       if (caption.length > 60) {
         caption = caption.substring(0, 60).trim() + '...';
       }
@@ -117,7 +125,7 @@ app.get('/parse', async (req, res) => {
           name: igTitle,
           size: 'Unknown',
           thumbnail: igThumbnail,
-          dlink: first.url || '',
+          dlink: first.url || first.dlink || '',
         }]
       });
     }
@@ -146,18 +154,28 @@ app.get('/parse', async (req, res) => {
     // 4. Facebook Downloader
     if (lowerUrl.includes('facebook.com') || lowerUrl.includes('fb.watch') || lowerUrl.includes('fb.gg')) {
       console.log(`Resolving Facebook URL: ${cleanUrl}...`);
-      const fb = await fbdown(cleanUrl);
-      if (!fb.status) {
-        throw new Error(fb.message || 'Facebook resolution failed');
+      let data;
+      try {
+        const apiRes = await fetch(`https://backend1.tioo.eu.org/fbdown?url=${encodeURIComponent(cleanUrl)}`);
+        data = await apiRes.json();
+      } catch (err) {
+        data = await fbdown(cleanUrl);
       }
-      const videoUrl = fb.HD || fb.Normal_video;
+
+      const videoUrl = data.HD || data.Normal_video || data.url;
       if (!videoUrl) {
         throw new Error('No video found in this Facebook post');
       }
-      const fbThumbnail = fb.thumbnail || fb.cover || fb.image || fb.thumb || '';
+
+      let title = data.title || data.caption || 'Facebook_Video';
+      if (title.length > 60) {
+        title = title.substring(0, 60).trim() + '...';
+      }
+      const fbThumbnail = data.thumbnail || data.cover || data.image || data.thumb || '';
+
       return res.status(200).json({
         list: [{
-          name: fb.title || 'Facebook_Video.mp4',
+          name: title.endsWith('.mp4') ? title : `${title}.mp4`,
           size: 'Unknown',
           thumbnail: fbThumbnail,
           dlink: videoUrl,
