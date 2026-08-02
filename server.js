@@ -11,6 +11,21 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
+// API Key Verification Middleware for security (excludes /privacy)
+const verifyApiKey = (req, res, next) => {
+  const apiKey = req.headers['x-api-key'] || req.query.apiKey;
+  const expectedKey = process.env.API_KEY || 'AnihubTeraSecureKey2026_xYz';
+  if (apiKey !== expectedKey) {
+    return res.status(403).json({ error: "Access denied. Invalid or missing API key." });
+  }
+  next();
+};
+
+app.use('/parse', verifyApiKey);
+app.use('/stats', verifyApiKey);
+app.use('/track', verifyApiKey);
+
+
 function formatBytes(bytes, decimals = 2) {
   if (!bytes || isNaN(bytes)) return 'Unknown';
   const k = 1024;
