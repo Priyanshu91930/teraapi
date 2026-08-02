@@ -62,34 +62,41 @@ export default async function handler(req, res) {
 
     // 1. YouTube Downloader
     if (lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) {
-      // Prefer direct googlevideo.com links (faster, no third-party proxy throttling).
-      // ytdl-core sometimes gets bot-blocked on datacenter IPs, so fall back to btch-downloader.
+      // Swap priority: Try btch-downloader first for high-speed conversion proxy links (no IP throttle).
+      // Fall back to ytdl-core only if btch-downloader fails.
       let yt = null;
       try {
-        const info = await ytdl.getInfo(cleanUrl, { requestOptions: { timeout: 20000 } });
-        const video = ytdl.chooseFormat(info.formats, { quality: 'highest', filter: 'audioandvideo' });
-        const audio = ytdl.chooseFormat(info.formats, { quality: 'highestaudio', filter: 'audioonly' });
-        if (video && video.url) {
-          yt = {
-            status: true,
-            title: info.videoDetails.title,
-            thumbnail: (info.videoDetails.thumbnails && info.videoDetails.thumbnails[info.videoDetails.thumbnails.length - 1]?.url) || '',
-            mp4: video.url,
-            mp4Size: video.contentLength,
-            mp3: audio && audio.url ? audio.url : '',
-            mp3Size: audio ? audio.contentLength : 0,
-          };
+        const fb = await youtube(cleanUrl);
+        if (fb && fb.status && fb.mp4) {
+          yt = { ...fb, mp4Size: 0, mp3Size: 0 };
         }
       } catch (e) {
-        console.log(`[Parse] ytdl-core failed (${e.message || e}), falling back to btch-downloader...`);
+        console.log(`[Parse] btch-downloader youtube failed, trying ytdl-core:`, e.message);
       }
 
       if (!yt || !yt.mp4) {
-        const fb = await youtube(cleanUrl);
-        if (!fb.status) {
-          throw new Error(fb.message || 'YouTube resolution failed');
+        try {
+          const info = await ytdl.getInfo(cleanUrl, { requestOptions: { timeout: 20000 } });
+          const video = ytdl.chooseFormat(info.formats, { quality: 'highest', filter: 'audioandvideo' });
+          const audio = ytdl.chooseFormat(info.formats, { quality: 'highestaudio', filter: 'audioonly' });
+          if (video && video.url) {
+            yt = {
+              status: true,
+              title: info.videoDetails.title,
+              thumbnail: (info.videoDetails.thumbnails && info.videoDetails.thumbnails[info.videoDetails.thumbnails.length - 1]?.url) || '',
+              mp4: video.url,
+              mp4Size: video.contentLength,
+              mp3: audio && audio.url ? audio.url : '',
+              mp3Size: audio ? audio.contentLength : 0,
+            };
+          }
+        } catch (err) {
+          console.log(`[Parse] ytdl-core fallback failed:`, err.message);
         }
-        yt = { ...fb, mp4Size: 0, mp3Size: 0 };
+      }
+
+      if (!yt || !yt.mp4) {
+        throw new Error('YouTube resolution failed. Please verify the URL and try again.');
       }
 
       return res.status(200).json({
