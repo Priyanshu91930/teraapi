@@ -17,6 +17,10 @@
     {
       "src": "api/privacy.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "api/download.js",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
@@ -52,6 +56,15 @@
       "dest": "/api/privacy.js",
       "headers": {
         "Content-Type": "text/html"
+      }
+    },
+    {
+      "src": "/download",
+      "dest": "/api/download.js",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, x-api-key, Range"
       }
     }
   ]
