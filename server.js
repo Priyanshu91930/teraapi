@@ -3,6 +3,7 @@ import cors from 'cors';
 import { TeraBoxApp } from './api.js';
 import ytdl from '@distube/ytdl-core';
 import { youtube, igdl, ttdl, fbdown } from 'btch-downloader';
+import { connectToDatabase, Stat, incrementStat, recordPageView } from './db.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -29,6 +30,9 @@ app.get('/parse', async (req, res) => {
   const cleanUrl = url.trim().replace(/[\s\r\n\t]/g, '');
 
   try {
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    recordPageView(ip).catch(e => console.error('[DB] recordPageView error:', e));
+
     const lowerUrl = cleanUrl.toLowerCase();
 
     // 1. YouTube Downloader
@@ -229,6 +233,42 @@ app.get('/parse', async (req, res) => {
       error: error.message || "Failed to resolve link. Please try again.",
     });
   }
+});
+
+});
+
+app.get('/stats', async (req, res) => {
+  try {
+    await connectToDatabase();
+    const statsList = await Stat.find({});
+    const baseStats = {
+      downloads: 0,
+      views: 0,
+      streams: 0,
+      users: 0
+    };
+    statsList.forEach(stat => {
+      if (baseStats[stat.key] !== undefined) {
+        baseStats[stat.key] += stat.value;
+      }
+    });
+    return res.status(200).json(baseStats);
+  } catch (error) {
+    return res.status(500).json({ error: error.message || 'Failed to fetch statistics' });
+  }
+});
+
+app.post('/track', async (req, res) => {
+  const { type } = req.query;
+  if (type === 'download' || type === 'downloads') {
+    await incrementStat('downloads', 1);
+    return res.status(200).json({ success: true, message: 'Download tracked' });
+  }
+  if (type === 'stream' || type === 'streams') {
+    await incrementStat('streams', 1);
+    return res.status(200).json({ success: true, message: 'Stream tracked' });
+  }
+  return res.status(400).json({ error: 'Invalid tracking type' });
 });
 
 app.listen(PORT, () => {

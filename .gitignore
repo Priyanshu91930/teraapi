@@ -8,3 +8,6 @@ testapp*
 *.txt
 .vscode
 *.patch
+.env
+.env*
+.vercel

@@ -30,6 +30,7 @@
         "crc-32": "^1.2.2",
         "express": "^4.19.2",
         "filesize": "^11.0.22",
+        "mongoose": "^9.9.1",
         "tough-cookie": "^6.0.2",
         "undici": "^8.9.0"
     },

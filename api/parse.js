@@ -1,6 +1,7 @@
 import { TeraBoxApp } from '../api.js';
 import ytdl from '@distube/ytdl-core';
 import { youtube, igdl, ttdl, fbdown } from 'btch-downloader';
+import { recordPageView } from '../db.js';
 
 function formatBytes(bytes, decimals = 2) {
   if (!bytes || isNaN(bytes)) return 'Unknown';
@@ -54,6 +55,9 @@ export default async function handler(req, res) {
   const cleanUrl = url.trim().replace(/[\s\r\n\t]/g, '');
 
   try {
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    recordPageView(ip).catch(e => console.error('[DB] recordPageView error:', e));
+
     const lowerUrl = cleanUrl.toLowerCase();
 
     // 1. YouTube Downloader
