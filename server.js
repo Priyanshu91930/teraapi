@@ -394,7 +394,7 @@ app.get('/privacy', (req, res) => {
         <p>We may update our Privacy Policy from time to time. You are advised to review this page periodically for any changes. Changes to this Privacy Policy are effective when they are posted on this page.</p>
 
         <h2>7. Contact Us</h2>
-        <p>If you have any questions or suggestions about our Privacy Policy, do not hesitate to contact us at <strong>support@anihub.in</strong>.</p>
+        <p>If you have any questions or suggestions about our Privacy Policy, do not hesitate to contact us at <strong>solankipriyanshu94@gmail.com</strong>.</p>
     </div>
     <div class="footer">
         &copy; 2026 Tera Downloader. All rights reserved.
