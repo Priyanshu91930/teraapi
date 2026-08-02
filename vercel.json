@@ -13,6 +13,10 @@
     {
       "src": "api/track.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "api/privacy.js",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
@@ -41,6 +45,13 @@
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type"
+      }
+    },
+    {
+      "src": "/privacy",
+      "dest": "/api/privacy.js",
+      "headers": {
+        "Content-Type": "text/html"
       }
     }
   ]
