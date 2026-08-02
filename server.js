@@ -105,11 +105,18 @@ app.get('/parse', async (req, res) => {
       if (!first) {
         throw new Error('No media files found in this Instagram post');
       }
+      let caption = ig.caption || first.caption || '';
+      if (caption.length > 60) {
+        caption = caption.substring(0, 60).trim() + '...';
+      }
+      const igTitle = caption ? `${caption} (Instagram).mp4` : `Instagram_Video_${Date.now().toString().slice(-4)}.mp4`;
+      const igThumbnail = first.thumbnail || first.thumbnail_url || first.preview || '';
+
       return res.status(200).json({
         list: [{
-          name: 'Instagram_Video.mp4',
+          name: igTitle,
           size: 'Unknown',
-          thumbnail: first.thumbnail || '',
+          thumbnail: igThumbnail,
           dlink: first.url || '',
         }]
       });
@@ -147,11 +154,12 @@ app.get('/parse', async (req, res) => {
       if (!videoUrl) {
         throw new Error('No video found in this Facebook post');
       }
+      const fbThumbnail = fb.thumbnail || fb.cover || fb.image || fb.thumb || '';
       return res.status(200).json({
         list: [{
           name: fb.title || 'Facebook_Video.mp4',
           size: 'Unknown',
-          thumbnail: '',
+          thumbnail: fbThumbnail,
           dlink: videoUrl,
         }]
       });
