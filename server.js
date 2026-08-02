@@ -3,12 +3,15 @@ import cors from 'cors';
 import { TeraBoxApp } from './api.js';
 import ytdl from '@distube/ytdl-core';
 import { youtube, igdl, ttdl, fbdown } from 'btch-downloader';
+import { getDb, getKeysCollection, addApiKey, listApiKeys, toggleApiKey, deleteApiKey } from './db.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
+
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'change-me';
 
 function formatBytes(bytes, decimals = 2) {
   if (!bytes || isNaN(bytes)) return 'Unknown';
@@ -161,6 +164,20 @@ app.get('/parse', async (req, res) => {
       return res.status(400).json({ error: "Invalid share link. Please paste a valid TeraBox, YouTube, Instagram, Facebook, or TikTok link." });
     }
 
+    // 0. Primary: teraboxdl.site API (premium ndus → full download speed) with multi-key rotation
+    try {
+      const { resolveTeraboxdl } = await import('./rotation.js');
+      await getDb();
+      const tdl = await resolveTeraboxdl({ url: cleanUrl });
+      if (tdl.ok && tdl.result && tdl.result.list && tdl.result.list.length > 0) {
+        console.log(`[Parse] Resolved via teraboxdl API: ${tdl.result.list.length} file(s)`);
+        return res.status(200).json(tdl.result);
+      }
+      console.log(`[Parse] teraboxdl API unavailable (${tdl.error}), falling back to own API...`);
+    } catch (e) {
+      console.log(`[Parse] teraboxdl API error (${e.message}), falling back to own API...`);
+    }
+
     // Always strip the leading '1' from the shortUrl because the /share/list API expects the raw surl token
     const strippedShortUrl = shortUrl.replace(/^1/, '');
 
@@ -228,6 +245,60 @@ app.get('/parse', async (req, res) => {
     return res.status(500).json({
       error: error.message || "Failed to resolve link. Please try again.",
     });
+  }
+});
+
+// ─── Admin endpoints for managing teraboxdl API keys ───
+function requireAdmin(req, res, next) {
+  const token = req.headers['x-admin-token'] || req.query.token;
+  if (token !== ADMIN_TOKEN) {
+    return res.status(401).json({ error: 'Unauthorized. Invalid admin token.' });
+  }
+  next();
+}
+
+app.get('/admin/keys', requireAdmin, async (req, res) => {
+  try {
+    await getDb();
+    const keys = await listApiKeys();
+    res.status(200).json({ keys });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/admin/keys', requireAdmin, async (req, res) => {
+  const { apiKey, apiSecret, label, note } = req.body || {};
+  if (!apiKey || !apiSecret) {
+    return res.status(400).json({ error: 'apiKey and apiSecret are required' });
+  }
+  try {
+    await getDb();
+    const id = await addApiKey({ apiKey, apiSecret, label, note });
+    res.status(201).json({ id, message: 'API key added' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.patch('/admin/keys/:id', requireAdmin, async (req, res) => {
+  const { enabled } = req.body || {};
+  try {
+    await getDb();
+    await toggleApiKey(req.params.id, !!enabled);
+    res.status(200).json({ message: 'Updated' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/admin/keys/:id', requireAdmin, async (req, res) => {
+  try {
+    await getDb();
+    await deleteApiKey(req.params.id);
+    res.status(200).json({ message: 'Deleted' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 

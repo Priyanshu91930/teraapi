@@ -1,6 +1,8 @@
 import { TeraBoxApp } from '../api.js';
 import ytdl from '@distube/ytdl-core';
 import { youtube, igdl, ttdl, fbdown } from 'btch-downloader';
+import { getDb, getKeysCollection, closeDb } from '../db.js';
+import { resolveTeraboxdl } from '../rotation.js';
 
 function formatBytes(bytes, decimals = 2) {
   if (!bytes || isNaN(bytes)) return 'Unknown';
@@ -179,6 +181,21 @@ export default async function handler(req, res) {
 
     if (!shortUrl) {
       return res.status(400).json({ error: "Invalid share link. Please paste a valid TeraBox, YouTube, Instagram, Facebook, or TikTok link." });
+    }
+
+    // 0. Primary: teraboxdl.site API (premium ndus → full download speed) with multi-key rotation
+    let teraboxdlData = null;
+    try {
+      await getDb();
+      const tdl = await resolveTeraboxdl({ url: cleanUrl });
+      if (tdl.ok && tdl.result && tdl.result.list && tdl.result.list.length > 0) {
+        teraboxdlData = tdl.result;
+        console.log(`[Parse] Resolved via teraboxdl API: ${teraboxdlData.list.length} file(s)`);
+        return res.status(200).json(teraboxdlData);
+      }
+      console.log(`[Parse] teraboxdl API unavailable (${tdl.error}), falling back to own API...`);
+    } catch (e) {
+      console.log(`[Parse] teraboxdl API error (${e.message}), falling back to own API...`);
     }
 
     // Always strip the leading '1' from the shortUrl because the /share/list API expects the raw surl token
