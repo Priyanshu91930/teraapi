@@ -8,6 +8,3 @@ testapp*
 *.txt
 .vscode
 *.patch
-.env
-.env.*
-!.env.example
