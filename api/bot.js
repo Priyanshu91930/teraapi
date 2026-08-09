@@ -165,11 +165,24 @@ export default async function handler(req, res) {
     }
 
     // Send each file details
+    const host = req.headers.host || 'teraapi-seven.vercel.app';
+    const apiKey = process.env.API_KEY || 'AnihubTeraSecureKey2026_xYz';
+
     for (const file of files) {
+      const isTeraBox = targetUrl.toLowerCase().includes('terabox') || 
+                        targetUrl.toLowerCase().includes('1024tera') || 
+                        targetUrl.toLowerCase().includes('terasharefile') ||
+                        file.dlink.includes('terabox') ||
+                        file.dlink.includes('1024terabox');
+      
+      const downloadLink = isTeraBox 
+        ? `https://${host}/download?url=${encodeURIComponent(file.dlink)}&filename=${encodeURIComponent(file.name)}&apiKey=${apiKey}`
+        : file.dlink;
+
       const caption = `<b>📂 Name:</b> <code>${file.name}</code>\n` +
         `<b>⚖️ Size:</b> ${file.size}\n\n` +
         `<b>🚀 Direct Download Link:</b>\n` +
-        `<a href="${file.dlink}">Click here to Download / Play</a>`;
+        `<a href="${downloadLink}">Click here to Download / Play</a>`;
 
       let sentPhotoSuccess = false;
       if (file.thumbnail) {
