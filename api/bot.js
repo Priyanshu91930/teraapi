@@ -126,6 +126,16 @@ export default async function handler(req, res) {
             return res.status(200).send('OK');
           }
 
+          const activeTask = await LeechTask.findOne({
+            chatId: chatId,
+            status: { $in: ['pending', 'processing'] }
+          });
+
+          if (activeTask) {
+            await answerCallbackQuery(callbackQuery.id, '⚠️ You already have a task in the queue. Please wait for it to complete!');
+            return res.status(200).send('OK');
+          }
+
           const task = await LeechTask.findById(taskId);
           if (task) {
             if (task.status === 'parsed') {
