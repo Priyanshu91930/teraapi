@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import shutil
 import asyncio
 import logging
 import requests
@@ -52,7 +53,20 @@ bot = Client("leech_daemon_session", api_id=API_ID, api_hash=API_HASH, bot_token
 # Video extension list
 VIDEO_EXTS = ('.mp4', '.mkv', '.webm', '.avi', '.mov', '.flv', '.m4v', '.3gp')
 
-# Helper to format status text with visual progress bar, speed and ETA
+# Size formatter helper
+def format_size(bytes_val):
+    for unit in ['B', 'KB', 'MB', 'GB']:
+        if bytes_val < 1024.0:
+            return f"{bytes_val:.2f} {unit}"
+        bytes_val /= 1024.0
+    return f"{bytes_val:.2f} TB"
+
+# Helper to get free space
+def get_free_disk_space():
+    total, used, free = shutil.disk_usage('.')
+    return free, format_size(free)
+
+# Helper to format status text with visual progress bar, speed, ETA, and free space
 def make_progress_status(status_name, filename, current, total, start_time):
     now = time.time()
     elapsed = now - start_time
@@ -67,14 +81,6 @@ def make_progress_status(status_name, filename, current, total, start_time):
     remaining_blocks = 10 - completed_blocks
     progress_bar = "■" * completed_blocks + "□" * remaining_blocks
     
-    # Size formatter helper
-    def format_size(bytes_val):
-        for unit in ['B', 'KB', 'MB', 'GB']:
-            if bytes_val < 1024.0:
-                return f"{bytes_val:.2f} {unit}"
-            bytes_val /= 1024.0
-        return f"{bytes_val:.2f} TB"
-        
     speed_str = format_size(speed) + "/s"
     current_str = format_size(current)
     total_str = format_size(total)
@@ -91,13 +97,16 @@ def make_progress_status(status_name, filename, current, total, start_time):
     else:
         eta_str = "Calculating..."
         
+    _, free_space_str = get_free_disk_space()
+        
     status_text = (
         f"⏳ <b>VPS Status: {status_name}...</b>\n"
         f"📁 <b>File:</b> <code>{filename}</code>\n\n"
         f"<code>[{progress_bar}] {percentage:.1f}%</code>\n"
         f"⚖️ <b>Size:</b> {current_str} / {total_str}\n"
         f"⚡ <b>Speed:</b> {speed_str}\n"
-        f"⏱️ <b>ETA:</b> {eta_str}"
+        f"⏱️ <b>ETA:</b> {eta_str}\n"
+        f"💾 <b>VPS Free Space:</b> {free_space_str}"
     )
     return status_text
 
@@ -153,6 +162,17 @@ async def download_file(url, local_path, progress_tracker=None):
         with requests.get(url, headers=headers, stream=True, timeout=60) as r:
             r.raise_for_status()
             total_size = int(r.headers.get('content-length', 0))
+            
+            # Disk space check with safety buffer (100MB)
+            free_space, free_space_str = get_free_disk_space()
+            buffer_space = 100 * 1024 * 1024  # 100 MB buffer
+            
+            if total_size > (free_space - buffer_space):
+                raise Exception(
+                    f"Insufficient disk space on VPS. "
+                    f"File requires {format_size(total_size)} but only {free_space_str} is free (100MB buffer required)."
+                )
+
             downloaded = 0
             with open(local_path, 'wb') as f:
                 for chunk in r.iter_content(chunk_size=1024 * 1024): # 1MB chunks
@@ -300,7 +320,8 @@ async def main():
     async with bot:
         while True:
             try:
-                task = tasks_collection.find_one({'status': 'pending'})
+                # FIFO logic: find one task sorted by creation date ascending (oldest first)
+                task = tasks_collection.find_one({'status': 'pending'}, sort=[('createdAt', 1)])
                 if task:
                     await process_task(task)
                 else:
