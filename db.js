@@ -94,3 +94,17 @@ export async function recordPageView(ipAddress) {
     console.error('[DB] Failed to record page view:', err.message);
   }
 }
+
+// Define Leech Task Schema
+const LeechTaskSchema = new mongoose.Schema({
+  chatId: { type: Number, required: true },
+  messageId: { type: Number, required: true },
+  dlink: { type: String, required: true },
+  filename: { type: String, required: true },
+  status: { type: String, enum: ['parsed', 'pending', 'processing', 'completed', 'failed'], default: 'parsed' },
+  error: { type: String },
+  createdAt: { type: Date, default: Date.now },
+});
+
+export const LeechTask = mongoose.models.LeechTask || mongoose.model('LeechTask', LeechTaskSchema);
+
