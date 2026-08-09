@@ -110,7 +110,12 @@ export default async function handler(req, res) {
         url: targetUrl,
         apiKey: process.env.API_KEY || 'AnihubTeraSecureKey2026_xYz'
       },
-      headers: {}
+      headers: {
+        'x-forwarded-for': '127.0.0.1'
+      },
+      socket: {
+        remoteAddress: '127.0.0.1'
+      }
     };
 
     const mockRes = {
