@@ -303,49 +303,17 @@ export default async function handler(req, res) {
         ? `https://${host}/download?url=${encodeURIComponent(file.dlink)}&filename=${encodeURIComponent(file.name)}&apiKey=${apiKey}`
         : file.dlink;
 
-      const caption = `<b>📂 Name:</b> <code>${file.name}</code>\n` +
-        `<b>⚖️ Size:</b> ${file.size}\n\n` +
-        `<b>🚀 Direct Download Link:</b>\n` +
-        `<a href="${downloadLink}">Click here to Download / Play</a>`;
+      const caption = `📂 Name: <code>${file.name}</code>\n` +
+        `⚖️ Size: ${file.size}`;
 
       // Construct Inline Keyboard Markup
-      let replyMarkup = null;
-      if (dbConnected) {
-        try {
-          // Save task to database in "parsed" status
-          const task = await LeechTask.create({
-            chatId: chatId,
-            messageId: message.message_id,
-            dlink: downloadLink, // Route through proxy so VPS downloads with correct headers
-            filename: file.name,
-            status: 'parsed'
-          });
-
-          if (task && task._id) {
-            replyMarkup = {
-              inline_keyboard: [
-                [
-                  { text: "⚡ Direct Download / Play", url: downloadLink },
-                  { text: "📥 Get files into telegram", callback_data: `leech_${task._id}` }
-                ]
-              ]
-            };
-          }
-        } catch (taskErr) {
-          console.error('Failed to create LeechTask:', taskErr.message);
-        }
-      }
-
-      // If database task creation failed or disabled, fallback to direct download button only
-      if (!replyMarkup) {
-        replyMarkup = {
-          inline_keyboard: [
-            [
-              { text: "⚡ Direct Download / Play", url: downloadLink }
-            ]
+      const replyMarkup = {
+        inline_keyboard: [
+          [
+            { text: "⚡ Direct Download / Play", url: downloadLink }
           ]
-        };
-      }
+        ]
+      };
 
       let sentPhotoSuccess = false;
       if (file.thumbnail) {
