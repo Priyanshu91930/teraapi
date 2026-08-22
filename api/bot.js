@@ -299,8 +299,19 @@ export default async function handler(req, res) {
                         file.dlink.includes('terabox') ||
                         file.dlink.includes('1024terabox');
       
+      // Helper to match website's ROT13 + Base64 double masking
+      const obfuscateUrl = (urlStr) => {
+        const rot13 = (str) => {
+          return str.replace(/[a-zA-Z]/g, (c) => {
+            return String.fromCharCode(c.charCodeAt(0) + (c.toUpperCase() <= 'M' ? 13 : -13));
+          });
+        };
+        return Buffer.from(rot13(urlStr)).toString('base64');
+      };
+
+      const websiteDomain = 'teraboxdownloader.co.in';
       const downloadLink = isTeraBox 
-        ? `https://${host}/download?url=${encodeURIComponent(file.dlink)}&filename=${encodeURIComponent(file.name)}&apiKey=${apiKey}`
+        ? `https://${websiteDomain}/download.php?url=${encodeURIComponent(obfuscateUrl(file.dlink))}&name=${encodeURIComponent(file.name)}`
         : file.dlink;
 
       const caption = `📂 Name: <code>${file.name}</code>\n` +
