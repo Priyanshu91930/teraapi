@@ -107,6 +107,17 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  // Extract siteOrigin from referer or fallback to default domain
+  let siteOrigin = 'https://teraboxdownloader.co.in';
+  if (req.headers.referer) {
+    try {
+      const refUrl = new URL(req.headers.referer);
+      siteOrigin = refUrl.origin;
+    } catch (e) {
+      // ignore
+    }
+  }
+
   // Security Check: Validate API Key / Subscription Token
   const apiKey = req.headers['x-api-key'] || req.query.apiKey;
   const expectedKey = process.env.API_KEY || 'AnihubTeraSecureKey2026_xYz';
@@ -487,7 +498,7 @@ export default async function handler(req, res) {
               if (textContent.startsWith('#EXTM3U')) {
                 // Rewrite absolute CDN URLs to go through the local domain's download proxy to bypass CORS restrictions
                 textContent = textContent.replace(/^(https?:\/\/[^\s\r\n]+)/gm, (match) => {
-                  return `/download.php?url=${encodeURIComponent(match)}&filename=segment.ts`;
+                  return `${siteOrigin}/download.php?url=${encodeURIComponent(match)}&filename=segment.ts`;
                 });
                 streamUrl = 'data:application/x-mpegURL;base64,' + Buffer.from(textContent).toString('base64');
                 streamData = { m3u8: streamUrl };
@@ -524,7 +535,7 @@ export default async function handler(req, res) {
                   if (retryText.startsWith('#EXTM3U')) {
                     // Rewrite absolute CDN URLs to go through the local domain's download proxy to bypass CORS restrictions
                     retryText = retryText.replace(/^(https?:\/\/[^\s\r\n]+)/gm, (match) => {
-                      return `/download.php?url=${encodeURIComponent(match)}&filename=segment.ts`;
+                      return `${siteOrigin}/download.php?url=${encodeURIComponent(match)}&filename=segment.ts`;
                     });
                     streamUrl = 'data:application/x-mpegURL;base64,' + Buffer.from(retryText).toString('base64');
                     streamData = { m3u8: streamUrl };
