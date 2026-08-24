@@ -1,7 +1,7 @@
 import { TeraBoxApp } from '../api.js';
 import ytdl from '@distube/ytdl-core';
 import { youtube, igdl, ttdl, fbdown } from 'btch-downloader';
-import { recordPageView, connectToDatabase, ApiSubscription } from '../db.js';
+import { recordPageView, connectToDatabase, ApiSubscription, SystemConfig } from '../db.js';
 
 function formatBytes(bytes, decimals = 2) {
   if (!bytes || isNaN(bytes)) return 'Unknown';
@@ -12,6 +12,65 @@ function formatBytes(bytes, decimals = 2) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
+// Function to get the current ndus token (either from MongoDB, or falling back to process.env)
+async function getNdusToken() {
+  try {
+    await connectToDatabase();
+    const config = await SystemConfig.findOne({ key: 'TERABOX_NDUS' });
+    if (config && config.value) {
+      console.log('[NDUS] Retrieved token from MongoDB config cache.');
+      return config.value;
+    }
+  } catch (err) {
+    console.error('[NDUS Cache] Failed to fetch from DB:', err.message);
+  }
+  return process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
+}
+
+// Function to refresh ndus token using credentials
+async function refreshNdusToken(whost) {
+  const email = process.env.TERABOX_EMAIL || process.env.TERABOX_USER;
+  const password = process.env.TERABOX_PASSWORD || process.env.TERABOX_PASS;
+  
+  if (!email || !password) {
+    console.log('[NDUS Auto-Login] Missing credentials (TERABOX_EMAIL / TERABOX_PASSWORD) in env variables.');
+    return null;
+  }
+
+  console.log(`[NDUS Auto-Login] Attempting passport login for email: ${email}`);
+  try {
+    const app = new TeraBoxApp('');
+    app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+    app.TERABOX_DOMAIN = whost.includes('1024tera.com') ? '1024tera.com' : 'terabox.com';
+    app.params.whost = whost;
+    app.params.uhost = whost;
+
+    const preLoginData = await app.passportPreLogin(email);
+    const loginRes = await app.passportLogin(preLoginData, email, password);
+
+    if (loginRes.code === 0 && loginRes.data && loginRes.data.ndus) {
+      const newNdus = loginRes.data.ndus;
+      console.log('[NDUS Auto-Login] Success! New token generated.');
+
+      // Save to MongoDB persistently
+      try {
+        await SystemConfig.findOneAndUpdate(
+          { key: 'TERABOX_NDUS' },
+          { value: newNdus, updatedAt: new Date() },
+          { upsert: true }
+        );
+        console.log('[NDUS Auto-Login] Saved new token to MongoDB configuration cache.');
+      } catch (dbErr) {
+        console.error('[NDUS Auto-Login] Failed to save new token to MongoDB:', dbErr.message);
+      }
+      return newNdus;
+    } else {
+      console.error('[NDUS Auto-Login] Failed. Response:', JSON.stringify(loginRes));
+    }
+  } catch (loginErr) {
+    console.error('[NDUS Auto-Login] Exception occurred:', loginErr.message);
+  }
+  return null;
 // Follow TeraBox dlink redirect to get actual CDN URL (faster download)
 async function resolveCdnUrl(dlink, headers) {
   try {
@@ -295,23 +354,39 @@ export default async function handler(req, res) {
     const hasDlink = listData && listData.list && listData.list[0] && listData.list[0].dlink;
     let tokenExpiredDetected = false;
 
-    if (!listData || listData.errno !== 0 || !hasDlink) {
+     if (!listData || listData.errno !== 0 || !hasDlink) {
       console.log(`[Parse] Anonymous resolution returned no dlink. Falling back to logged-in NDUS session...`);
-      const ndusToken = process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
+      let ndusToken = await getNdusToken();
       if (ndusToken) {
-        const app = new TeraBoxApp(ndusToken);
+        let app = new TeraBoxApp(ndusToken);
         app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
         app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
         app.params.whost = anonApp.params.whost;
         app.params.uhost = anonApp.params.uhost;
 
         try {
-          const ndusData = await app.shortUrlList(strippedShortUrl);
+          let ndusData = await app.shortUrlList(strippedShortUrl);
           console.log(`[Parse] NDUS session response:`, JSON.stringify(ndusData));
           
+          if (ndusData && (ndusData.errno === 400141 || ndusData.errno === 105 || ndusData.errno === -6 || ndusData.errno === 108)) {
+            console.log('[Parse] NDUS token challenge/expiry detected. Attempting auto-login credentials refresh...');
+            const freshToken = await refreshNdusToken(anonApp.params.whost);
+            if (freshToken) {
+              ndusToken = freshToken;
+              app = new TeraBoxApp(ndusToken);
+              app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+              app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
+              app.params.whost = anonApp.params.whost;
+              app.params.uhost = anonApp.params.uhost;
+              
+              ndusData = await app.shortUrlList(strippedShortUrl);
+              console.log(`[Parse] Retry NDUS session response:`, JSON.stringify(ndusData));
+            }
+          }
+
           if (ndusData && ndusData.errno === 0) {
             listData = ndusData;
-          } else if (ndusData && (ndusData.errno === 105 || ndusData.errno === -6 || ndusData.errno === 108)) {
+          } else if (ndusData && (ndusData.errno === 105 || ndusData.errno === -6 || ndusData.errno === 108 || ndusData.errno === 400141)) {
             tokenExpiredDetected = true;
             console.warn(`[WARNING] TeraBox Premium Token (ndus) returned error code ${ndusData.errno}.`);
           }
@@ -349,7 +424,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: `TeraBox API returned error code ${errCode}. Please verify the URL or try again later.` });
     }
 
-    const ndusToken = process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
+    let ndusToken = await getNdusToken();
 
     // Generate a single browserid session token
     const browserId = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
@@ -384,7 +459,7 @@ export default async function handler(req, res) {
 
       if (isVideo && ndusToken) {
         try {
-          const app = new TeraBoxApp(ndusToken);
+          let app = new TeraBoxApp(ndusToken);
           app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
           app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
           app.params.whost = anonApp.params.whost;
@@ -397,11 +472,34 @@ export default async function handler(req, res) {
             const sRes = await fetch(debugStreamEndpoint, {
               headers: {
                 'User-Agent': app.params.ua,
-                'Cookie': `browserid=${browserId}`,
+                'Cookie': `ndus=${ndusToken}; browserid=${browserId}`,
                 'Referer': `https://www.${app.TERABOX_DOMAIN}/`
               }
             });
             streamData = await sRes.json();
+
+            // If streaming returns need verify, refresh token and retry
+            if (streamData && streamData.errno === 400141) {
+              console.log('[Stream] share/streaming returned need verify. Refreshing token...');
+              const freshToken = await refreshNdusToken(app.params.whost);
+              if (freshToken) {
+                ndusToken = freshToken;
+                app = new TeraBoxApp(ndusToken);
+                app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+                app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
+                app.params.whost = anonApp.params.whost;
+                app.params.uhost = anonApp.params.uhost;
+
+                const retryRes = await fetch(debugStreamEndpoint, {
+                  headers: {
+                    'User-Agent': app.params.ua,
+                    'Cookie': `ndus=${ndusToken}; browserid=${browserId}`,
+                    'Referer': `https://www.${app.TERABOX_DOMAIN}/`
+                  }
+                });
+                streamData = await retryRes.json();
+              }
+            }
           } else {
             // Fallback to personal file stream endpoint
             streamData = await app.getStream(file.path || file.server_filename || '', 'M3U8_AUTO_480');

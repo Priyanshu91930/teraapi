@@ -135,3 +135,13 @@ const AuthUserSchema = new mongoose.Schema({
 
 export const User = mongoose.models.User || mongoose.model('User', AuthUserSchema);
 
+// Define System Config Schema to store dynamic variables like ndusToken
+const SystemConfigSchema = new mongoose.Schema({
+  key: { type: String, unique: true, required: true },
+  value: { type: String, required: true },
+  updatedAt: { type: Date, default: Date.now },
+});
+
+export const SystemConfig = mongoose.models.SystemConfig || mongoose.model('SystemConfig', SystemConfigSchema);
+
+
