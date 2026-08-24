@@ -39,6 +39,10 @@
       "use": "@vercel/node"
     },
     {
+      "src": "api/refresh.js",
+      "use": "@vercel/node"
+    },
+    {
       "src": "api/auth/login.js",
       "use": "@vercel/node"
     },
@@ -112,6 +116,15 @@
     {
       "src": "/config",
       "dest": "/api/config.js",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, x-api-key"
+      }
+    },
+    {
+      "src": "/refresh",
+      "dest": "/api/refresh.js",
       "headers": {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
