@@ -2600,6 +2600,7 @@ class TeraBoxApp {
                 num: 20000,
                 dir: remoteDir,
                 page: page,
+                dlink: 1,
             });
         
             if(remoteDir === ''){
