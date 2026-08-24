@@ -351,6 +351,19 @@ export default async function handler(req, res) {
 
     const ndusToken = process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
 
+    // Fetch the correct sign and timestamp metadata for streaming
+    let sign = '';
+    let timestamp = '';
+    try {
+      const infoData = await anonApp.shortUrlInfo(strippedShortUrl);
+      if (infoData && infoData.errno === 0) {
+        sign = infoData.sign || '';
+        timestamp = infoData.timestamp || '';
+      }
+    } catch (infoErr) {
+      console.error('[Parse] Failed to fetch shortUrlInfo metadata:', infoErr.message);
+    }
+
     const formattedList = await Promise.all((listData.list || []).map(async (file) => {
       const ext = file.server_filename?.split('.').pop()?.toLowerCase();
       const isVideo = ['mp4', 'webm', 'ogg', 'mkv', 'mov', 'avi', 'ts', 'wmv', '3gp', 'flv'].includes(ext);
@@ -367,7 +380,7 @@ export default async function handler(req, res) {
           let streamData;
           if (listData.share_id && listData.uk) {
             // Use the shared streaming endpoint which is optimized for shared links and pass sign/timestamp verification signatures
-            const streamEndpoint = `${app.params.whost}/share/streaming?path=${encodeURIComponent(file.path || '')}&fid=${file.fs_id || ''}&uk=${listData.uk}&shareid=${listData.share_id}&sign=${listData.sign || ''}&timestamp=${listData.timestamp || ''}&type=M3U8_AUTO_480&vip=2`;
+            const streamEndpoint = `${app.params.whost}/share/streaming?path=${encodeURIComponent(file.path || '')}&fid=${file.fs_id || ''}&uk=${listData.uk}&shareid=${listData.share_id}&sign=${sign}&timestamp=${timestamp}&type=M3U8_AUTO_480&vip=2`;
             const sRes = await fetch(streamEndpoint, {
               headers: {
                 'User-Agent': app.params.ua,
