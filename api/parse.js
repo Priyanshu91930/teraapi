@@ -1,7 +1,7 @@
 import { TeraBoxApp } from '../api.js';
 import ytdl from '@distube/ytdl-core';
 import { youtube, igdl, ttdl, fbdown } from 'btch-downloader';
-import { recordPageView } from '../db.js';
+import { recordPageView, connectToDatabase, ApiSubscription } from '../db.js';
 
 function formatBytes(bytes, decimals = 2) {
   if (!bytes || isNaN(bytes)) return 'Unknown';
@@ -46,11 +46,56 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  // Security Check: Validate API Key
+  // Security Check: Validate API Key / Subscription Token
   const apiKey = req.headers['x-api-key'] || req.query.apiKey;
   const expectedKey = process.env.API_KEY || 'AnihubTeraSecureKey2026_xYz';
+  
   if (apiKey !== expectedKey) {
-    return res.status(403).json({ error: "Access denied. Invalid or missing API key." });
+    if (!apiKey) {
+      return res.status(403).json({ error: "Access denied. Missing API key." });
+    }
+
+    try {
+      await connectToDatabase();
+      const subscription = await ApiSubscription.findOne({ token: apiKey });
+
+      if (!subscription || subscription.status !== 'active') {
+        return res.status(403).json({ error: "Access denied. Invalid or inactive subscription token." });
+      }
+
+      // Check Expiry
+      if (subscription.expiresAt && new Date(subscription.expiresAt) < new Date()) {
+        subscription.status = 'expired';
+        await subscription.save();
+        return res.status(403).json({ error: "Access denied. Subscription token has expired." });
+      }
+
+      // Check and Reset daily quota
+      const now = new Date();
+      const lastReset = new Date(subscription.lastReset);
+      const isNewDay = now.getUTCFullYear() !== lastReset.getUTCFullYear() ||
+                        now.getUTCMonth() !== lastReset.getUTCMonth() ||
+                        now.getUTCDate() !== lastReset.getUTCDate();
+
+      if (isNewDay) {
+        subscription.requestCount = 0;
+        subscription.lastReset = now;
+      }
+
+      // Check daily limit
+      if (subscription.requestCount >= subscription.requestLimit) {
+        await subscription.save();
+        return res.status(429).json({ error: "Daily request limit exceeded for this plan. Please upgrade." });
+      }
+
+      // Increment request count
+      subscription.requestCount += 1;
+      await subscription.save();
+
+    } catch (dbErr) {
+      console.error('[DB] Token verification failed:', dbErr.message);
+      return res.status(500).json({ error: "Internal security validation error." });
+    }
   }
 
   const { url } = req.query;
@@ -275,14 +320,40 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: `TeraBox API returned error code ${errCode}` });
     }
 
-    const formattedList = (listData.list || []).map((file) => ({
-      name: file.server_filename || 'video.mp4',
-      size: file.size ? formatBytes(Number(file.size)) : 'Unknown',
-      thumbnail: file.thumbs?.url3 || file.thumbs?.url1 || '',
-      dlink: file.dlink || '',
-    }));
-
     const ndusToken = process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
+
+    const formattedList = await Promise.all((listData.list || []).map(async (file) => {
+      const ext = file.server_filename?.split('.').pop()?.toLowerCase();
+      const isVideo = ['mp4', 'webm', 'ogg', 'mkv', 'mov', 'avi', 'ts', 'wmv', '3gp', 'flv'].includes(ext);
+      let streamUrl = '';
+
+      if (isVideo && ndusToken) {
+        try {
+          const app = new TeraBoxApp(ndusToken);
+          app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+          app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
+          app.params.whost = anonApp.params.whost;
+          app.params.uhost = anonApp.params.uhost;
+
+          const streamData = await app.getStream(file.path || file.server_filename || '', 'M3U8_AUTO_480');
+          if (streamData && streamData.m3u8) {
+            streamUrl = streamData.m3u8;
+          } else if (streamData && streamData.result && streamData.result.m3u8) {
+            streamUrl = streamData.result.m3u8;
+          }
+        } catch (streamErr) {
+          console.error('[Stream] Failed to resolve HLS stream:', streamErr.message);
+        }
+      }
+
+      return {
+        name: file.server_filename || 'video.mp4',
+        size: file.size ? formatBytes(Number(file.size)) : 'Unknown',
+        thumbnail: file.thumbs?.url3 || file.thumbs?.url1 || '',
+        dlink: file.dlink || '',
+        stream_url: streamUrl
+      };
+    }));
 
     return res.status(200).json({
       list: formattedList,

@@ -108,3 +108,19 @@ const LeechTaskSchema = new mongoose.Schema({
 
 export const LeechTask = mongoose.models.LeechTask || mongoose.model('LeechTask', LeechTaskSchema);
 
+// Define API Subscription Schema
+const ApiSubscriptionSchema = new mongoose.Schema({
+  email: { type: String, required: true, index: true },
+  token: { type: String, unique: true, required: true, index: true },
+  plan: { type: String, required: true },
+  subscriptionId: { type: String, required: true, index: true },
+  status: { type: String, required: true, default: 'created' },
+  requestLimit: { type: Number, required: true, default: 1000 },
+  requestCount: { type: Number, default: 0 },
+  lastReset: { type: Date, default: Date.now },
+  expiresAt: { type: Date },
+  createdAt: { type: Date, default: Date.now }
+});
+
+export const ApiSubscription = mongoose.models.ApiSubscription || mongoose.model('ApiSubscription', ApiSubscriptionSchema);
+
