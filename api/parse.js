@@ -470,7 +470,7 @@ export default async function handler(req, res) {
           let streamData;
           if (listData.share_id && listData.uk) {
             // Use the shared streaming endpoint which is optimized for shared links and pass sign/timestamp verification signatures along with the browserid session cookie
-            debugStreamEndpoint = `${app.params.whost}/share/streaming?path=${encodeURIComponent(file.path || '')}&fid=${file.fs_id || ''}&uk=${listData.uk}&shareid=${listData.share_id}&sign=${sign}&timestamp=${timestamp}&type=M3U8_AUTO_480&vip=2`;
+            debugStreamEndpoint = `${app.params.whost}/share/streaming?app_id=250528&web=1&channel=dubian-wap&clienttype=0&path=${encodeURIComponent(file.path || '')}&fid=${file.fs_id || ''}&uk=${listData.uk}&shareid=${listData.share_id}&sign=${sign}&timestamp=${timestamp}&type=M3U8_AUTO_480&vip=2`;
             const sRes = await fetch(debugStreamEndpoint, {
               headers: {
                 'User-Agent': app.params.ua,
