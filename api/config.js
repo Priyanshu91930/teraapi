@@ -22,16 +22,24 @@ export default async function handler(req, res) {
     await connectToDatabase();
 
     if (req.method === 'GET') {
-      // Retrieve current cached token (obscure for security, only show first and last few chars)
+      // Retrieve current cached token
       const config = await SystemConfig.findOne({ key: 'TERABOX_NDUS' });
       const currentToken = config ? config.value : "";
-      const obscuredToken = currentToken 
+
+      // Obscured version for casual/manual checks
+      const obscuredToken = currentToken
         ? `${currentToken.substring(0, 5)}...${currentToken.substring(currentToken.length - 5)}`
         : "None (falling back to Vercel env)";
-      
-      return res.status(200).json({ 
-        status: "success", 
+
+      // Full token ONLY revealed to authenticated callers (admin API key is
+      // required above) — consumed by the Hostinger download proxy so it can
+      // always send the same fresh session cookie as the Vercel API.
+      const reveal = req.query.reveal === '1';
+
+      return res.status(200).json({
+        status: "success",
         cached_ndus: obscuredToken,
+        ndus_full: reveal ? currentToken : "",
         updatedAt: config ? config.updatedAt : null
       });
     }

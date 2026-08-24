@@ -768,6 +768,11 @@ class TeraBoxApp {
             }
             
             const rdata = await req.body.json();
+            
+            if(rdata.code === 0 && rdata.data && typeof rdata.data === 'object'){
+                Object.assign(rdata, rdata.data);
+            }
+            
             return rdata;
         }
         catch (error) {
