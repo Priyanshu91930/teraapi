@@ -35,6 +35,10 @@
       "use": "@vercel/node"
     },
     {
+      "src": "api/config.js",
+      "use": "@vercel/node"
+    },
+    {
       "src": "api/auth/login.js",
       "use": "@vercel/node"
     },
@@ -103,6 +107,15 @@
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, x-razorpay-signature"
+      }
+    },
+    {
+      "src": "/config",
+      "dest": "/api/config.js",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, x-api-key"
       }
     },
     {
