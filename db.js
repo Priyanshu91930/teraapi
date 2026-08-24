@@ -63,7 +63,7 @@ export async function incrementStat(key, amount = 1) {
     await Stat.findOneAndUpdate(
       { key },
       { $inc: { value: amount } },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
   } catch (err) {
     console.error(`[DB] Failed to increment stat ${key}:`, err.message);
