@@ -124,3 +124,13 @@ const ApiSubscriptionSchema = new mongoose.Schema({
 
 export const ApiSubscription = mongoose.models.ApiSubscription || mongoose.model('ApiSubscription', ApiSubscriptionSchema);
 
+// Define User Schema for Auth
+const UserSchema = new mongoose.Schema({
+  email: { type: String, required: true, unique: true, index: true },
+  password: { type: String, required: true },
+  role: { type: String, enum: ['user', 'admin'], default: 'user' },
+  createdAt: { type: Date, default: Date.now }
+});
+
+export const User = mongoose.models.User || mongoose.model('User', UserSchema);
+

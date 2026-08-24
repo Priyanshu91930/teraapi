@@ -29,6 +29,18 @@
     {
       "src": "api/webhook.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "api/auth/register.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "api/auth/login.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "api/auth/me.js",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
@@ -91,6 +103,33 @@
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, x-razorpay-signature"
+      }
+    },
+    {
+      "src": "/auth/register",
+      "dest": "/api/auth/register.js",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type"
+      }
+    },
+    {
+      "src": "/auth/login",
+      "dest": "/api/auth/login.js",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type"
+      }
+    },
+    {
+      "src": "/auth/me",
+      "dest": "/api/auth/me.js",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization"
       }
     }
   ]
