@@ -364,11 +364,29 @@ export default async function handler(req, res) {
           app.params.whost = anonApp.params.whost;
           app.params.uhost = anonApp.params.uhost;
 
-          const streamData = await app.getStream(file.path || file.server_filename || '', 'M3U8_AUTO_480');
+          let streamData;
+          if (listData.share_id && listData.uk) {
+            // Use the shared streaming endpoint which is optimized for shared links
+            const streamEndpoint = `${app.params.whost}/api/share/streaming?path=${encodeURIComponent(file.path || '')}&uk=${listData.uk}&shareid=${listData.share_id}&type=M3U8_AUTO_480&vip=2`;
+            const sRes = await fetch(streamEndpoint, {
+              headers: {
+                'User-Agent': app.params.ua,
+                'Cookie': `ndus=${ndusToken}`,
+                'Referer': `https://www.${app.TERABOX_DOMAIN}/`
+              }
+            });
+            streamData = await sRes.json();
+          } else {
+            // Fallback to personal file stream endpoint
+            streamData = await app.getStream(file.path || file.server_filename || '', 'M3U8_AUTO_480');
+          }
+
           if (streamData && streamData.m3u8) {
             streamUrl = streamData.m3u8;
           } else if (streamData && streamData.result && streamData.result.m3u8) {
             streamUrl = streamData.result.m3u8;
+          } else if (streamData && streamData.url) {
+            streamUrl = streamData.url;
           }
         } catch (streamErr) {
           console.error('[Stream] Failed to resolve HLS stream:', streamErr.message);
