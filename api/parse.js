@@ -411,7 +411,11 @@ export default async function handler(req, res) {
         size: file.size ? formatBytes(Number(file.size)) : 'Unknown',
         thumbnail: file.thumbs?.url3 || file.thumbs?.url1 || '',
         dlink: file.dlink || '',
-        stream_url: streamUrl
+        stream_url: streamUrl,
+        debug_sign: sign,
+        debug_timestamp: timestamp,
+        debug_stream_endpoint: isVideo && typeof app !== 'undefined' ? `${app.params.whost}/share/streaming?path=${encodeURIComponent(file.path || '')}&fid=${file.fs_id || ''}&uk=${listData.uk}&shareid=${listData.share_id}&sign=${sign}&timestamp=${timestamp}&type=M3U8_AUTO_480&vip=2` : '',
+        debug_stream_data: isVideo && typeof streamData !== 'undefined' ? streamData : null
       };
     }));
 
