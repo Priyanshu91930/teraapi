@@ -367,7 +367,7 @@ export default async function handler(req, res) {
           let streamData;
           if (listData.share_id && listData.uk) {
             // Use the shared streaming endpoint which is optimized for shared links
-            const streamEndpoint = `${app.params.whost}/api/share/streaming?path=${encodeURIComponent(file.path || '')}&uk=${listData.uk}&shareid=${listData.share_id}&type=M3U8_AUTO_480&vip=2`;
+            const streamEndpoint = `${app.params.whost}/share/streaming?path=${encodeURIComponent(file.path || '')}&uk=${listData.uk}&shareid=${listData.share_id}&type=M3U8_AUTO_480&vip=2`;
             const sRes = await fetch(streamEndpoint, {
               headers: {
                 'User-Agent': app.params.ua,
