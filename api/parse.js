@@ -293,6 +293,8 @@ export default async function handler(req, res) {
 
     // 2. If anonymous fails, returns error, or lacks a dlink (direct download link), fallback to logged-in NDUS session
     const hasDlink = listData && listData.list && listData.list[0] && listData.list[0].dlink;
+    let tokenExpiredDetected = false;
+
     if (!listData || listData.errno !== 0 || !hasDlink) {
       console.log(`[Parse] Anonymous resolution returned no dlink. Falling back to logged-in NDUS session...`);
       const ndusToken = process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
@@ -306,8 +308,12 @@ export default async function handler(req, res) {
         try {
           const ndusData = await app.shortUrlList(strippedShortUrl);
           console.log(`[Parse] NDUS session response:`, JSON.stringify(ndusData));
+          
           if (ndusData && ndusData.errno === 0) {
             listData = ndusData;
+          } else if (ndusData && (ndusData.errno === 105 || ndusData.errno === -6 || ndusData.errno === 108)) {
+            tokenExpiredDetected = true;
+            console.warn(`[WARNING] TeraBox Premium Token (ndus) returned error code ${ndusData.errno}.`);
           }
         } catch (e) {
           console.error(`[Parse] NDUS session failed with error:`, e.message);
@@ -315,9 +321,32 @@ export default async function handler(req, res) {
       }
     }
 
+    // Trigger Telegram notification if token expiry is detected
+    if (tokenExpiredDetected) {
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || process.env.CHAT_ID || "1892511025"; // Fallback to user ID from logs
+      if (botToken && adminChatId) {
+        console.log(`[Telegram Alert] Sending token expiry warning to admin chat: ${adminChatId}`);
+        fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: adminChatId,
+            text: `⚠️ <b>TeraBox Premium Token Expired!</b>\n\nThe premium cookie session (ndus) has expired or been blocked by TeraBox. The API is temporarily running in public/anonymous fallback mode.\n\nPlease update <b>TERABOX_NDUS</b> in Vercel settings and redeploy immediately.`,
+            parse_mode: 'HTML'
+          })
+        }).catch(err => console.error('[Telegram Alert] Failed:', err.message));
+      }
+    }
+
+    // Failsafe Fallback: If both failed, but anonymous returned a list (even without dlink), use it as fallback
+    if ((!listData || listData.errno !== 0) && listData && listData.list) {
+      listData.errno = 0; // Bypass error block to return whatever metadata we got
+    }
+
     if (!listData || listData.errno !== 0) {
       const errCode = listData ? listData.errno : 'Unknown';
-      return res.status(400).json({ error: `TeraBox API returned error code ${errCode}` });
+      return res.status(400).json({ error: `TeraBox API returned error code ${errCode}. Please verify the URL or try again later.` });
     }
 
     const ndusToken = process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
