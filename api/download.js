@@ -1,6 +1,23 @@
 import { Readable } from 'stream';
+import { connectToDatabase, SystemConfig } from '../db.js';
 
 export const config = { maxDuration: 60 };
+
+// Token lookup order: MongoDB cache first (auto-login refreshes this in
+// realtime), then Vercel env as bootstrap/fallback.
+async function getNdusToken() {
+  try {
+    await connectToDatabase();
+    const config = await SystemConfig.findOne({ key: 'TERABOX_NDUS' });
+    if (config && config.value) {
+      console.log('[NDUS] Retrieved token from MongoDB config cache.');
+      return config.value;
+    }
+  } catch (err) {
+    console.error('[NDUS Cache] Failed to fetch from DB:', err.message);
+  }
+  return process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
+}
 
 function isPrivateHost(host) {
   const blocked = /(^|\.)(local|localhost|internal|home|corp)$/i;
@@ -47,7 +64,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Invalid download URL" });
   }
 
-  const ndusToken = process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
+  const ndusToken = await getNdusToken();
   const headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Accept': '*/*',

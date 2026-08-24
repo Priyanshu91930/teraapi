@@ -97,6 +97,67 @@ async function resolveCdnUrl(dlink, headers) {
   }
 }
 
+const TB_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+// Telegram alert on ndus token expiry
+async function sendTelegramTokenAlert() {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || process.env.CHAT_ID || "1892511025"; // Fallback to user ID from logs
+  if (!botToken || !adminChatId) return;
+  console.log(`[Telegram Alert] Sending token expiry warning to admin chat: ${adminChatId}`);
+  await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: adminChatId,
+      text: `⚠️ <b>TeraBox Premium Token Expired!</b>\n\nThe premium cookie session (ndus) has expired or been blocked by TeraBox. The API is temporarily running in public/anonymous fallback mode.\n\nPlease update <b>TERABOX_NDUS</b> in Vercel settings and redeploy immediately.`,
+      parse_mode: 'HTML'
+    })
+  }).catch(err => console.error('[Telegram Alert] Failed:', err.message));
+}
+
+// Recover dlink via /share/download when /share/list omits it.
+// TeraBox stopped returning dlink in share/list for many sessions; this signed
+// endpoint still returns it for valid logged-in (ndus) sessions.
+// Returns '' on any failure.
+async function resolveDlinkViaShareDownload(whost, sign, timestamp, shareId, uk, fsId, cookie) {
+  try {
+    const dlUrl = new URL(`${whost}/share/download`);
+    dlUrl.search = new URLSearchParams({
+      app_id: '250528',
+      web: '1',
+      channel: 'dubian-wap',
+      clienttype: '0',
+      shareid: String(shareId),
+      uk: String(uk),
+      fid_list: JSON.stringify([fsId]),
+      sign: sign || '',
+      timestamp: String(timestamp || ''),
+      product: 'share',
+      nozip: '0',
+      type: 'dlink',
+    });
+    const res = await fetch(dlUrl, {
+      headers: {
+        'User-Agent': TB_UA,
+        'Referer': `${whost}/sharing/link?surl=`,
+        'Cookie': cookie || `browserid=${Math.random().toString(36).substring(2)}`,
+      },
+      signal: AbortSignal.timeout(15000),
+    });
+    const j = await res.json();
+    if (j && j.errno === 0 && j.dlink) {
+      console.log('[Parse] dlink recovered via /share/download');
+      return j.dlink;
+    }
+    console.log(`[Parse] /share/download fallback failed: errno=${j && j.errno} errmsg=${j && j.errmsg}`);
+    return '';
+  } catch (e) {
+    console.log('[Parse] /share/download fallback error:', e.message);
+    return '';
+  }
+}
+
 export default async function handler(req, res) {
   // Handle CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -366,10 +427,17 @@ export default async function handler(req, res) {
     // 2. If anonymous fails, returns error, or lacks a dlink (direct download link), fallback to logged-in NDUS session
     const hasDlink = listData && listData.list && listData.list[0] && listData.list[0].dlink;
     let tokenExpiredDetected = false;
+    let dlinkRecoveryFailed = false;
 
      if (!listData || listData.errno !== 0 || !hasDlink) {
       console.log(`[Parse] Anonymous resolution returned no dlink. Falling back to logged-in NDUS session...`);
       let ndusToken = await getNdusToken();
+      // Bootstrap: no token anywhere (DB + env empty)? Try auto-login directly
+      // so the system can self-start with just EMAIL/PASSWORD credentials.
+      if (!ndusToken) {
+        console.log('[Parse] No ndus token found in DB or env. Trying credential bootstrap...');
+        ndusToken = await refreshNdusToken(anonApp.params.whost) || '';
+      }
       if (ndusToken) {
         let app = new TeraBoxApp(ndusToken);
         app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -411,23 +479,11 @@ export default async function handler(req, res) {
 
     // Trigger Telegram notification if token expiry is detected
     if (tokenExpiredDetected) {
-      const botToken = process.env.TELEGRAM_BOT_TOKEN;
-      const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || process.env.CHAT_ID || "1892511025"; // Fallback to user ID from logs
-      if (botToken && adminChatId) {
-        console.log(`[Telegram Alert] Sending token expiry warning to admin chat: ${adminChatId}`);
-        fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: adminChatId,
-            text: `⚠️ <b>TeraBox Premium Token Expired!</b>\n\nThe premium cookie session (ndus) has expired or been blocked by TeraBox. The API is temporarily running in public/anonymous fallback mode.\n\nPlease update <b>TERABOX_NDUS</b> in Vercel settings and redeploy immediately.`,
-            parse_mode: 'HTML'
-          })
-        }).catch(err => console.error('[Telegram Alert] Failed:', err.message));
-      }
+      await sendTelegramTokenAlert();
+      tokenExpiredDetected = false;
     }
 
-    // Failsafe Fallback: If both failed, but anonymous returned a list (even without dlink), use it as fallback
+// Failsafe Fallback: If both failed, but anonymous returned a list (even without dlink), use it as fallback
     if ((!listData || listData.errno !== 0) && listData && listData.list) {
       listData.errno = 0; // Bypass error block to return whatever metadata we got
     }
@@ -469,6 +525,23 @@ export default async function handler(req, res) {
       let streamUrl = '';
       let debugStreamEndpoint = '';
       let debugStreamData = null;
+
+      // Recover missing dlink via the signed /share/download endpoint
+      // (share/list no longer returns dlink for many sessions)
+      let dlink = file.dlink || '';
+      if (!dlink && sign && timestamp && listData.share_id && listData.uk && file.fs_id) {
+        const sessionCookie = ndusToken
+          ? `ndus=${ndusToken}; browserid=${browserId}`
+          : `browserid=${browserId}`;
+        dlink = await resolveDlinkViaShareDownload(
+          anonApp.params.whost, sign, timestamp,
+          listData.share_id || listData.shareid, listData.uk,
+          file.fs_id, sessionCookie
+        );
+        if (!dlink && ndusToken) {
+          dlinkRecoveryFailed = true;
+        }
+      }
 
       if (isVideo && ndusToken) {
         try {
@@ -569,7 +642,7 @@ export default async function handler(req, res) {
         name: file.server_filename || 'video.mp4',
         size: file.size ? formatBytes(Number(file.size)) : 'Unknown',
         thumbnail: file.thumbs?.url3 || file.thumbs?.url1 || '',
-        dlink: file.dlink || '',
+        dlink: dlink,
         stream_url: streamUrl,
         debug_sign: sign,
         debug_timestamp: timestamp,
@@ -577,6 +650,12 @@ export default async function handler(req, res) {
         debug_stream_data: debugStreamData
       };
     }));
+
+    // If dlink recovery still failed with a session present, the token is
+    // almost certainly expired -> alert admin (deduplicated per request)
+    if (dlinkRecoveryFailed) {
+      await sendTelegramTokenAlert();
+    }
 
     return res.status(200).json({
       list: formattedList,
