@@ -478,7 +478,19 @@ export default async function handler(req, res) {
                 'Referer': `https://www.${app.TERABOX_DOMAIN}/`
               }
             });
-            streamData = await sRes.json();
+            
+            const contentType = sRes.headers.get('content-type') || '';
+            if (contentType.includes('json')) {
+              streamData = await sRes.json();
+            } else {
+              const textContent = await sRes.text();
+              if (textContent.startsWith('#EXTM3U')) {
+                streamUrl = 'data:application/x-mpegURL;base64,' + Buffer.from(textContent).toString('base64');
+                streamData = { m3u8: streamUrl };
+              } else {
+                streamData = { error: textContent };
+              }
+            }
 
             // If streaming returns need verify, refresh token and retry
             if (streamData && streamData.errno === 400141) {
@@ -499,7 +511,19 @@ export default async function handler(req, res) {
                     'Referer': `https://www.${app.TERABOX_DOMAIN}/`
                   }
                 });
-                streamData = await retryRes.json();
+                
+                const retryContentType = retryRes.headers.get('content-type') || '';
+                if (retryContentType.includes('json')) {
+                  streamData = await retryRes.json();
+                } else {
+                  const retryText = await retryRes.text();
+                  if (retryText.startsWith('#EXTM3U')) {
+                    streamUrl = 'data:application/x-mpegURL;base64,' + Buffer.from(retryText).toString('base64');
+                    streamData = { m3u8: streamUrl };
+                  } else {
+                    streamData = { error: retryText };
+                  }
+                }
               }
             }
           } else {
