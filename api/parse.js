@@ -425,6 +425,10 @@ export default async function handler(req, res) {
       listData_share_id: listData ? listData.share_id : null,
       listData_shareid: listData ? listData.shareid : null,
       listData_uk: listData ? listData.uk : null,
+      first_file_keys: (listData && listData.list && listData.list[0]) ? Object.keys(listData.list[0]) : [],
+      first_file_server_filename: (listData && listData.list && listData.list[0]) ? listData.list[0].server_filename : null,
+      first_file_filename: (listData && listData.list && listData.list[0]) ? listData.list[0].filename : null,
+      first_file_name: (listData && listData.list && listData.list[0]) ? listData.list[0].name : null,
       downloadHeaders: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Cookie': ndusToken ? `ndus=${ndusToken}` : '',
