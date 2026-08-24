@@ -397,7 +397,7 @@ export default async function handler(req, res) {
             const sRes = await fetch(debugStreamEndpoint, {
               headers: {
                 'User-Agent': app.params.ua,
-                'Cookie': `ndus=${ndusToken}; browserid=${browserId}`,
+                'Cookie': `browserid=${browserId}`,
                 'Referer': `https://www.${app.TERABOX_DOMAIN}/`
               }
             });
