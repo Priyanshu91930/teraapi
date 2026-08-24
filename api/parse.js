@@ -483,8 +483,12 @@ export default async function handler(req, res) {
             if (contentType.includes('json')) {
               streamData = await sRes.json();
             } else {
-              const textContent = await sRes.text();
+              let textContent = await sRes.text();
               if (textContent.startsWith('#EXTM3U')) {
+                // Rewrite absolute CDN URLs to go through the local domain's download proxy to bypass CORS restrictions
+                textContent = textContent.replace(/^(https?:\/\/[^\s\r\n]+)/gm, (match) => {
+                  return `/download.php?url=${encodeURIComponent(match)}&filename=segment.ts`;
+                });
                 streamUrl = 'data:application/x-mpegURL;base64,' + Buffer.from(textContent).toString('base64');
                 streamData = { m3u8: streamUrl };
               } else {
@@ -516,8 +520,12 @@ export default async function handler(req, res) {
                 if (retryContentType.includes('json')) {
                   streamData = await retryRes.json();
                 } else {
-                  const retryText = await retryRes.text();
+                  let retryText = await retryRes.text();
                   if (retryText.startsWith('#EXTM3U')) {
+                    // Rewrite absolute CDN URLs to go through the local domain's download proxy to bypass CORS restrictions
+                    retryText = retryText.replace(/^(https?:\/\/[^\s\r\n]+)/gm, (match) => {
+                      return `/download.php?url=${encodeURIComponent(match)}&filename=segment.ts`;
+                    });
                     streamUrl = 'data:application/x-mpegURL;base64,' + Buffer.from(retryText).toString('base64');
                     streamData = { m3u8: streamUrl };
                   } else {
