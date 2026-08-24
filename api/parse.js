@@ -368,6 +368,8 @@ export default async function handler(req, res) {
       const ext = file.server_filename?.split('.').pop()?.toLowerCase();
       const isVideo = ['mp4', 'webm', 'ogg', 'mkv', 'mov', 'avi', 'ts', 'wmv', '3gp', 'flv'].includes(ext);
       let streamUrl = '';
+      let debugStreamEndpoint = '';
+      let debugStreamData = null;
 
       if (isVideo && ndusToken) {
         try {
@@ -380,8 +382,8 @@ export default async function handler(req, res) {
           let streamData;
           if (listData.share_id && listData.uk) {
             // Use the shared streaming endpoint which is optimized for shared links and pass sign/timestamp verification signatures
-            const streamEndpoint = `${app.params.whost}/share/streaming?path=${encodeURIComponent(file.path || '')}&fid=${file.fs_id || ''}&uk=${listData.uk}&shareid=${listData.share_id}&sign=${sign}&timestamp=${timestamp}&type=M3U8_AUTO_480&vip=2`;
-            const sRes = await fetch(streamEndpoint, {
+            debugStreamEndpoint = `${app.params.whost}/share/streaming?path=${encodeURIComponent(file.path || '')}&fid=${file.fs_id || ''}&uk=${listData.uk}&shareid=${listData.share_id}&sign=${sign}&timestamp=${timestamp}&type=M3U8_AUTO_480&vip=2`;
+            const sRes = await fetch(debugStreamEndpoint, {
               headers: {
                 'User-Agent': app.params.ua,
                 'Cookie': `ndus=${ndusToken}`,
@@ -394,6 +396,8 @@ export default async function handler(req, res) {
             streamData = await app.getStream(file.path || file.server_filename || '', 'M3U8_AUTO_480');
           }
 
+          debugStreamData = streamData;
+
           if (streamData && streamData.m3u8) {
             streamUrl = streamData.m3u8;
           } else if (streamData && streamData.result && streamData.result.m3u8) {
@@ -403,6 +407,7 @@ export default async function handler(req, res) {
           }
         } catch (streamErr) {
           console.error('[Stream] Failed to resolve HLS stream:', streamErr.message);
+          streamUrl = 'ERROR: ' + streamErr.message;
         }
       }
 
@@ -414,8 +419,8 @@ export default async function handler(req, res) {
         stream_url: streamUrl,
         debug_sign: sign,
         debug_timestamp: timestamp,
-        debug_stream_endpoint: isVideo && typeof app !== 'undefined' ? `${app.params.whost}/share/streaming?path=${encodeURIComponent(file.path || '')}&fid=${file.fs_id || ''}&uk=${listData.uk}&shareid=${listData.share_id}&sign=${sign}&timestamp=${timestamp}&type=M3U8_AUTO_480&vip=2` : '',
-        debug_stream_data: isVideo && typeof streamData !== 'undefined' ? streamData : null
+        debug_stream_endpoint: debugStreamEndpoint,
+        debug_stream_data: debugStreamData
       };
     }));
 
