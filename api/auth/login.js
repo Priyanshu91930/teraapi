@@ -11,7 +11,7 @@ export function verifyPassword(password, storedPassword) {
 
 // Generate secure stateless signature token
 export function generateSessionToken(email, role) {
-    const key = process.env.API_KEY || 'AnihubTeraSecureKey2026_xYz';
+    const key = process.env.API_KEY;
     const payload = JSON.stringify({ email: email.toLowerCase().trim(), role });
     const signature = crypto.createHmac('sha256', key).update(payload).digest('hex');
     return Buffer.from(payload).toString('base64') + '.' + signature;

@@ -12,7 +12,7 @@ export default async function handler(req, res) {
 
   // Security Check: Validate API Key
   const apiKey = req.headers['x-api-key'] || req.query.apiKey;
-  const expectedKey = process.env.API_KEY || 'AnihubTeraSecureKey2026_xYz';
+  const expectedKey = process.env.API_KEY;
   if (apiKey !== expectedKey) {
     return res.status(403).json({ error: "Access denied. Invalid or missing API key." });
   }

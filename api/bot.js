@@ -223,7 +223,7 @@ export default async function handler(req, res) {
       method: 'GET',
       query: {
         url: targetUrl,
-        apiKey: process.env.API_KEY || 'AnihubTeraSecureKey2026_xYz'
+        apiKey: process.env.API_KEY
       },
       headers: {
         'x-forwarded-for': '127.0.0.1'
@@ -280,7 +280,7 @@ export default async function handler(req, res) {
     }
 
     const host = req.headers.host || 'teraapi-seven.vercel.app';
-    const apiKey = process.env.API_KEY || 'AnihubTeraSecureKey2026_xYz';
+    const apiKey = process.env.API_KEY;
 
     // Connect to database to save tasks
     let dbConnected = false;

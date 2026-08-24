@@ -181,7 +181,7 @@ export default async function handler(req, res) {
 
   // Security Check: Validate API Key / Subscription Token
   const apiKey = req.headers['x-api-key'] || req.query.apiKey;
-  const expectedKey = process.env.API_KEY || 'AnihubTeraSecureKey2026_xYz';
+  const expectedKey = process.env.API_KEY;
   
   if (apiKey !== expectedKey) {
     if (!apiKey) {

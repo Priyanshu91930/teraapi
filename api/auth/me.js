@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 export function verifySessionToken(token) {
     if (!token || !token.includes('.')) return null;
     const [payloadB64, signature] = token.split('.');
-    const key = process.env.API_KEY || 'AnihubTeraSecureKey2026_xYz';
+    const key = process.env.API_KEY;
     
     try {
         const payloadStr = Buffer.from(payloadB64, 'base64').toString('utf8');
@@ -57,7 +57,7 @@ export default async function handler(req, res) {
                 // Return a mock active admin subscription
                 subscription = {
                     plan: 'yearly',
-                    token: process.env.API_KEY || 'AnihubTeraSecureKey2026_xYz', // Admin can use the master key directly
+                    token: process.env.API_KEY, // Admin can use the master key directly
                     status: 'active',
                     requestLimit: 1000000,
                     requestCount: 0,

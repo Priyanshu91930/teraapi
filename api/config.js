@@ -12,7 +12,7 @@ export default async function handler(req, res) {
 
   // Security Check: Validate Admin API Key
   const apiKey = req.headers['x-api-key'] || req.query.apiKey;
-  const secureKey = "AnihubTeraSecureKey2026_xYz";
+  const secureKey = process.env.API_KEY;
 
   if (!apiKey || apiKey !== secureKey) {
     return res.status(401).json({ error: "Unauthorized access. Invalid or missing API key." });
