@@ -421,6 +421,10 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       list: formattedList,
+      listData_keys: listData ? Object.keys(listData) : [],
+      listData_share_id: listData ? listData.share_id : null,
+      listData_shareid: listData ? listData.shareid : null,
+      listData_uk: listData ? listData.uk : null,
       downloadHeaders: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Cookie': ndusToken ? `ndus=${ndusToken}` : '',
