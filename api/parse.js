@@ -351,11 +351,22 @@ export default async function handler(req, res) {
 
     const ndusToken = process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
 
-    // Fetch the correct sign and timestamp metadata for streaming
+    // Generate a single browserid session token
+    const browserId = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+
+    // Fetch the correct sign and timestamp metadata for streaming using direct request with browserid
     let sign = '';
     let timestamp = '';
     try {
-      const infoData = await anonApp.shortUrlInfo(strippedShortUrl);
+      const infoUrl = `${anonApp.params.whost}/api/shorturlinfo?shorturl=1${strippedShortUrl}&root=1`;
+      const infoRes = await fetch(infoUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Cookie': `browserid=${browserId}`,
+          'Referer': `${anonApp.params.whost}/`
+        }
+      });
+      const infoData = await infoRes.json();
       if (infoData && infoData.errno === 0) {
         sign = infoData.sign || '';
         timestamp = infoData.timestamp || '';
@@ -381,12 +392,12 @@ export default async function handler(req, res) {
 
           let streamData;
           if (listData.share_id && listData.uk) {
-            // Use the shared streaming endpoint which is optimized for shared links and pass sign/timestamp verification signatures
+            // Use the shared streaming endpoint which is optimized for shared links and pass sign/timestamp verification signatures along with the browserid session cookie
             debugStreamEndpoint = `${app.params.whost}/share/streaming?path=${encodeURIComponent(file.path || '')}&fid=${file.fs_id || ''}&uk=${listData.uk}&shareid=${listData.share_id}&sign=${sign}&timestamp=${timestamp}&type=M3U8_AUTO_480&vip=2`;
             const sRes = await fetch(debugStreamEndpoint, {
               headers: {
                 'User-Agent': app.params.ua,
-                'Cookie': `ndus=${ndusToken}`,
+                'Cookie': `ndus=${ndusToken}; browserid=${browserId}`,
                 'Referer': `https://www.${app.TERABOX_DOMAIN}/`
               }
             });
