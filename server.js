@@ -1,9 +1,21 @@
 import express from 'express';
 import cors from 'cors';
+import fs from 'node:fs';
 import { TeraBoxApp } from './api.js';
 import ytdl from '@distube/ytdl-core';
 import { youtube, igdl, ttdl, fbdown } from 'btch-downloader';
 import { connectToDatabase, Stat, incrementStat, recordPageView } from './db.js';
+
+// Minimal .env loader for local runs (Vercel injects env vars itself)
+try {
+  const envFile = fs.readFileSync(new URL('./.env', import.meta.url), 'utf8');
+  for (const line of envFile.split('\n')) {
+    const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+    if (m && !line.trim().startsWith('#') && process.env[m[1]] === undefined) {
+      process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+    }
+  }
+} catch {}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
