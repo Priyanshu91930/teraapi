@@ -125,7 +125,7 @@ const ApiSubscriptionSchema = new mongoose.Schema({
 export const ApiSubscription = mongoose.models.ApiSubscription || mongoose.model('ApiSubscription', ApiSubscriptionSchema);
 
 // Define User Schema for Auth
-const UserSchema = new mongoose.Schema({
+const AuthUserSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true, index: true },
   password: { type: String, required: true },
   phone: { type: String },
@@ -133,5 +133,5 @@ const UserSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-export const User = mongoose.models.User || mongoose.model('User', UserSchema);
+export const User = mongoose.models.User || mongoose.model('User', AuthUserSchema);
 
