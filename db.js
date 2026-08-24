@@ -128,6 +128,7 @@ export const ApiSubscription = mongoose.models.ApiSubscription || mongoose.model
 const UserSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true, index: true },
   password: { type: String, required: true },
+  phone: { type: String },
   role: { type: String, enum: ['user', 'admin'], default: 'user' },
   createdAt: { type: Date, default: Date.now }
 });

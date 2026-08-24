@@ -22,7 +22,7 @@ export default async function handler(req, res) {
         return res.status(405).json({ error: 'Method Not Allowed' });
     }
 
-    const { email, password } = req.body;
+    const { email, password, phone } = req.body;
 
     if (!email || !password || !email.includes('@') || password.length < 6) {
         return res.status(400).json({ error: 'Invalid input. Password must be at least 6 characters.' });
@@ -50,6 +50,7 @@ export default async function handler(req, res) {
         const newUser = await User.create({
             email: lowerEmail,
             password: hashedPassword,
+            phone: phone || '',
             role
         });
 
