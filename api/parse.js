@@ -28,7 +28,7 @@ async function getNdusToken() {
 }
 
 // Function to refresh ndus token using credentials
-async function refreshNdusToken(whost) {
+export async function refreshNdusToken(whost) {
   const email = process.env.TERABOX_EMAIL || process.env.TERABOX_USER;
   const password = process.env.TERABOX_PASSWORD || process.env.TERABOX_PASS;
   
