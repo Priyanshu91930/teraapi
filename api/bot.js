@@ -167,7 +167,7 @@ async function isAdmin(userId) {
   return false;
 }
 
-// Check if user is member of channel(s) (force sub)
+// Check if user is member of channel(s) (force sub) OR has pending join request
 async function checkForceSub(userId) {
   // Bypass for Telegram system / anonymous admin accounts (posting anonymously as group admin)
   if ([1087968824, 777000].includes(Number(userId))) {
@@ -200,9 +200,35 @@ async function checkForceSub(userId) {
       }
       const status = data.result.status;
       console.log(`[ForceSub] User ${userId} status in ${channelId}: ${status}`);
-      if (!['member', 'administrator', 'creator'].includes(status)) {
-        return { ok: false, status, channelId };
+      
+      // Allow: member, administrator, creator
+      if (['member', 'administrator', 'creator'].includes(status)) {
+        continue; // Check next channel
       }
+      
+      // If status is 'left' - check if they have a pending join request
+      if (status === 'left') {
+        console.log(`[ForceSub] User ${userId} has status 'left' in ${channelId}, checking pending join requests...`);
+        const joinReqUrl = `https://api.telegram.org/bot${token}/getChatJoinRequests`;
+        const joinReqResp = await fetch(joinReqUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: channelId })
+        });
+        const joinReqData = await joinReqResp.json();
+        console.log(`[ForceSub] Join requests for ${channelId}:`, JSON.stringify(joinReqData));
+        
+        if (joinReqData.ok && joinReqData.result && joinReqData.result.length > 0) {
+          const hasPending = joinReqData.result.some(req => req.user.id === userId);
+          if (hasPending) {
+            console.log(`[ForceSub] User ${userId} has PENDING join request in ${channelId} - ALLOWED`);
+            continue; // Allow - they requested to join
+          }
+        }
+      }
+      
+      // Not a member, not admin, no pending request
+      return { ok: false, status, channelId };
     } catch (err) {
       console.error('Force sub check error:', err);
       return { ok: false, error: err.message, channelId };
