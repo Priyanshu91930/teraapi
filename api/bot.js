@@ -169,6 +169,11 @@ async function isAdmin(userId) {
 
 // Check if user is member of channel(s) (force sub)
 async function checkForceSub(userId) {
+  // Bypass for Telegram system / anonymous admin accounts (posting anonymously as group admin)
+  if ([1087968824, 777000].includes(Number(userId))) {
+    return { ok: true };
+  }
+
   const channelIds = process.env.FORCE_SUB_CHANNEL_ID;
   if (!channelIds) return { ok: true }; // No force sub configured
   
@@ -202,6 +207,11 @@ async function checkForceSub(userId) {
 
 // Check if user is member of group(s) (for link access)
 async function checkGroupMembership(userId) {
+  // Bypass for Telegram system / anonymous admin accounts (posting anonymously as group admin)
+  if ([1087968824, 777000].includes(Number(userId))) {
+    return { ok: true };
+  }
+
   const groupIds = process.env.FORCE_SUB_GROUP_ID;
   if (!groupIds) return { ok: true }; // No group requirement
   
