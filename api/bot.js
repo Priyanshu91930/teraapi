@@ -300,9 +300,13 @@ export default async function handler(req, res) {
     // 1. Handle Callback Query (e.g. user clicks "Get files into telegram")
     if (update.callback_query) {
       const callbackQuery = update.callback_query;
+      const cbUserId = callbackQuery.from.id;
+      const cbUsername = callbackQuery.from.username || '';
       const data = callbackQuery.data;
       const chatId = callbackQuery.message.chat.id;
       const messageId = callbackQuery.message.message_id;
+
+      console.log(`[Bot] Callback: ${cbUserId} (@${cbUsername}) | Data: ${data} | Chat: ${chatId}`);
 
       if (data && data.startsWith('leech_')) {
         const taskId = data.split('_')[1];
@@ -408,7 +412,13 @@ export default async function handler(req, res) {
 
     const { message } = update;
     const chatId = message.chat.id;
+    const userId = message.from?.id;
+    const username = message.from?.username || '';
+    const firstName = message.from?.first_name || '';
     const text = message.text ? message.text.trim() : '';
+
+    // Log every incoming message for tracking
+    console.log(`[Bot] User: ${userId} (@${username}) ${firstName} | Chat: ${chatId} (${message.chat.type}) | Text: ${text.substring(0, 50)}`);
 
     if (!text) {
       return res.status(200).send('OK');
@@ -477,10 +487,9 @@ export default async function handler(req, res) {
         `<i>Just paste/send the link directly here!</i>`;
       await sendMessage(chatId, welcomeText, message.message_id);
       return res.status(200).send('OK');
-    }
+}
 
-    // Force sub check for all non-command messages
-    const userId = message.from.id;
+// Force sub check for all non-command messages
     const forceSub = await checkForceSub(userId);
     if (!forceSub.ok) {
       const inviteLinks = {};
