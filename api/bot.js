@@ -185,6 +185,7 @@ async function checkForceSub(userId) {
   
   for (const channelId of channels) {
     try {
+      console.log(`[ForceSub] Checking channel ${channelId} for user ${userId}`);
       const url = `https://api.telegram.org/bot${token}/getChatMember`;
       const response = await fetch(url, {
         method: 'POST',
@@ -192,8 +193,13 @@ async function checkForceSub(userId) {
         body: JSON.stringify({ chat_id: channelId, user_id: userId })
       });
       const data = await response.json();
-      if (!data.ok) return { ok: false, error: data.description, channelId };
+      console.log(`[ForceSub] Response for ${channelId}:`, JSON.stringify(data));
+      if (!data.ok) {
+        console.error(`[ForceSub] API error for ${channelId}:`, data.description);
+        return { ok: false, error: data.description, channelId };
+      }
       const status = data.result.status;
+      console.log(`[ForceSub] User ${userId} status in ${channelId}: ${status}`);
       if (!['member', 'administrator', 'creator'].includes(status)) {
         return { ok: false, status, channelId };
       }
