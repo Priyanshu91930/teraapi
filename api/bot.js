@@ -426,16 +426,24 @@ export default async function handler(req, res) {
         try { Object.assign(inviteLinks, JSON.parse(process.env.FORCE_SUB_INVITE_LINKS || '{}')); } catch {}
         
         // Dynamically fetch invite links if not configured
-        const ch = forceSub.channelId || process.env.FORCE_SUB_CHANNEL_ID;
-        if (ch) {
+        const forceChannel = process.env.FORCE_SUB_CHANNEL_ID || '';
+        const forceGroup = process.env.FORCE_SUB_GROUP_ID || '';
+        
+        const channels = forceChannel.split(',').map(id => id.trim()).filter(Boolean);
+        const groups = forceGroup.split(',').map(id => id.trim()).filter(Boolean);
+        
+        if (forceSub.channelId && !channels.includes(forceSub.channelId)) {
+          channels.push(forceSub.channelId);
+        }
+
+        for (const ch of channels) {
           const inviteKey = `channel_${ch}`;
           if (!inviteLinks[inviteKey]) {
             const resolvedLink = await getInviteLink(ch);
             if (resolvedLink) inviteLinks[inviteKey] = resolvedLink;
           }
         }
-        const gr = process.env.FORCE_SUB_GROUP_ID;
-        if (gr) {
+        for (const gr of groups) {
           const inviteKey = `group_${gr}`;
           if (!inviteLinks[inviteKey]) {
             const resolvedLink = await getInviteLink(gr);
@@ -482,16 +490,24 @@ export default async function handler(req, res) {
       try { Object.assign(inviteLinks, JSON.parse(process.env.FORCE_SUB_INVITE_LINKS || '{}')); } catch {}
       
       // Dynamically fetch invite links if not configured
-      const ch = forceSub.channelId || process.env.FORCE_SUB_CHANNEL_ID;
-      if (ch) {
+      const forceChannel = process.env.FORCE_SUB_CHANNEL_ID || '';
+      const forceGroup = process.env.FORCE_SUB_GROUP_ID || '';
+      
+      const channels = forceChannel.split(',').map(id => id.trim()).filter(Boolean);
+      const groups = forceGroup.split(',').map(id => id.trim()).filter(Boolean);
+      
+      if (forceSub.channelId && !channels.includes(forceSub.channelId)) {
+        channels.push(forceSub.channelId);
+      }
+
+      for (const ch of channels) {
         const inviteKey = `channel_${ch}`;
         if (!inviteLinks[inviteKey]) {
           const resolvedLink = await getInviteLink(ch);
           if (resolvedLink) inviteLinks[inviteKey] = resolvedLink;
         }
       }
-      const gr = process.env.FORCE_SUB_GROUP_ID;
-      if (gr) {
+      for (const gr of groups) {
         const inviteKey = `group_${gr}`;
         if (!inviteLinks[inviteKey]) {
           const resolvedLink = await getInviteLink(gr);
