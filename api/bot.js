@@ -210,20 +210,36 @@ async function checkForceSub(userId) {
       if (status === 'left') {
         console.log(`[ForceSub] User ${userId} has status 'left' in ${channelId}, checking pending join requests...`);
         const joinReqUrl = `https://api.telegram.org/bot${token}/getChatJoinRequests`;
-        const joinReqResp = await fetch(joinReqUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chat_id: channelId })
-        });
-        const joinReqData = await joinReqResp.json();
-        console.log(`[ForceSub] Join requests for ${channelId}:`, JSON.stringify(joinReqData));
         
-        if (joinReqData.ok && joinReqData.result && joinReqData.result.length > 0) {
-          const hasPending = joinReqData.result.some(req => req.user.id === userId);
-          if (hasPending) {
-            console.log(`[ForceSub] User ${userId} has PENDING join request in ${channelId} - ALLOWED`);
-            continue; // Allow - they requested to join
+        // Try both formats: with and without -100 prefix
+        const channelIdsToTry = [channelId];
+        if (channelId.startsWith('-100')) {
+          channelIdsToTry.push(channelId.substring(4)); // Remove -100 prefix
+        }
+        
+        let hasPending = false;
+        for (const tryId of channelIdsToTry) {
+          const joinReqResp = await fetch(joinReqUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: tryId })
+          });
+          const joinReqData = await joinReqResp.json();
+          console.log(`[ForceSub] Join requests for ${tryId}:`, JSON.stringify(joinReqData));
+          
+          if (joinReqData.ok && joinReqData.result && joinReqData.result.length > 0) {
+            hasPending = joinReqData.result.some(req => req.user.id === userId);
+            if (hasPending) {
+              console.log(`[ForceSub] User ${userId} has PENDING join request in ${tryId} - ALLOWED`);
+              break;
+            }
+          } else if (joinReqData.error_code === 400 && joinReqData.description?.includes('CHAT_ADMIN_REQUIRED')) {
+            console.error(`[ForceSub] Bot not admin or lacks permission in ${tryId}`);
           }
+        }
+        
+        if (hasPending) {
+          continue; // Allow - they requested to join
         }
       }
       
