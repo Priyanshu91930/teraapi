@@ -99,6 +99,56 @@ async function editMessageReplyMarkup(chatId, messageId, replyMarkup) {
   }
 }
 
+const inviteLinkCache = {};
+
+// Fetch or create a Telegram chat invite link dynamically (join request mode)
+async function getInviteLink(chatId) {
+  if (!chatId) return null;
+  if (inviteLinkCache[chatId]) {
+    return inviteLinkCache[chatId];
+  }
+  
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return null;
+  
+  // Try to create a join request invite link
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/createChatInviteLink`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        creates_join_request: true
+      })
+    });
+    const data = await response.json();
+    if (data.ok && data.result && data.result.invite_link) {
+      inviteLinkCache[chatId] = data.result.invite_link;
+      return data.result.invite_link;
+    }
+  } catch (err) {
+    console.error('Error creating chat invite link:', err);
+  }
+  
+  // Fallback to exportChatInviteLink
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/exportChatInviteLink`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId })
+    });
+    const data = await response.json();
+    if (data.ok && data.result) {
+      inviteLinkCache[chatId] = data.result;
+      return data.result;
+    }
+  } catch (err) {
+    console.error('Error exporting chat invite link:', err);
+  }
+  
+  return null;
+}
+
 // Check if user is admin (from DB or env ADMIN_CHAT_ID)
 async function isAdmin(userId) {
   // Check env ADMIN_CHAT_ID first (comma-separated list)
@@ -191,17 +241,37 @@ function buildForceSubKeyboard(channelIds, groupIds, inviteLinks = {}) {
   const groups = groupIds ? groupIds.split(',').map(id => id.trim()).filter(Boolean) : [];
   
   channels.forEach((ch, i) => {
-    const inviteKey = ch.startsWith('-') ? `channel_${ch}` : `channel_${ch}`;
-    const inviteUrl = inviteLinks[inviteKey] || (ch.startsWith('@') ? `https://t.me/${ch.replace('@', '')}` : `https://t.me/${ch}`);
+    const inviteKey = `channel_${ch}`;
+    let inviteUrl = inviteLinks[inviteKey];
+    if (!inviteUrl) {
+      if (ch.startsWith('@')) {
+        inviteUrl = `https://t.me/${ch.replace('@', '')}`;
+      } else if (ch.startsWith('-100')) {
+        inviteUrl = `https://t.me/c/${ch.substring(4)}`;
+      } else {
+        inviteUrl = `https://t.me/${ch}`;
+      }
+    }
     const display = ch.startsWith('@') ? ch : `Channel ${i+1}`;
     keyboard.inline_keyboard.push([{ text: `📢 Join ${display}`, url: inviteUrl }]);
   });
+  
   groups.forEach((gr, i) => {
-    const inviteKey = gr.startsWith('-') ? `group_${gr}` : `group_${gr}`;
-    const inviteUrl = inviteLinks[inviteKey] || (gr.startsWith('@') ? `https://t.me/${gr.replace('@', '')}` : `https://t.me/${gr}`);
+    const inviteKey = `group_${gr}`;
+    let inviteUrl = inviteLinks[inviteKey];
+    if (!inviteUrl) {
+      if (gr.startsWith('@')) {
+        inviteUrl = `https://t.me/${gr.replace('@', '')}`;
+      } else if (gr.startsWith('-100')) {
+        inviteUrl = `https://t.me/c/${gr.substring(4)}`;
+      } else {
+        inviteUrl = `https://t.me/${gr}`;
+      }
+    }
     const display = gr.startsWith('@') ? gr : `Group ${i+1}`;
     keyboard.inline_keyboard.push([{ text: `👥 Join ${display}`, url: inviteUrl }]);
   });
+  
   keyboard.inline_keyboard.push([{ text: "✅ I've Joined", callback_data: "force_sub_check" }]);
   return keyboard;
 }
@@ -332,6 +402,8 @@ export default async function handler(req, res) {
       return res.status(200).send('OK');
     }
 
+    const isPrivateChat = message.chat.type === 'private';
+
     // Handle commands
     if (text === '/start' || text === '/help') {
       // Check force sub even for /start
@@ -340,6 +412,25 @@ export default async function handler(req, res) {
       if (!forceSub.ok) {
         const inviteLinks = {};
         try { Object.assign(inviteLinks, JSON.parse(process.env.FORCE_SUB_INVITE_LINKS || '{}')); } catch {}
+        
+        // Dynamically fetch invite links if not configured
+        const ch = forceSub.channelId || process.env.FORCE_SUB_CHANNEL_ID;
+        if (ch) {
+          const inviteKey = `channel_${ch}`;
+          if (!inviteLinks[inviteKey]) {
+            const resolvedLink = await getInviteLink(ch);
+            if (resolvedLink) inviteLinks[inviteKey] = resolvedLink;
+          }
+        }
+        const gr = process.env.FORCE_SUB_GROUP_ID;
+        if (gr) {
+          const inviteKey = `group_${gr}`;
+          if (!inviteLinks[inviteKey]) {
+            const resolvedLink = await getInviteLink(gr);
+            if (resolvedLink) inviteLinks[inviteKey] = resolvedLink;
+          }
+        }
+
         const keyboard = buildForceSubKeyboard(
           process.env.FORCE_SUB_CHANNEL_ID,
           process.env.FORCE_SUB_GROUP_ID,
@@ -376,6 +467,25 @@ export default async function handler(req, res) {
     if (!forceSub.ok) {
       const inviteLinks = {};
       try { Object.assign(inviteLinks, JSON.parse(process.env.FORCE_SUB_INVITE_LINKS || '{}')); } catch {}
+      
+      // Dynamically fetch invite links if not configured
+      const ch = forceSub.channelId || process.env.FORCE_SUB_CHANNEL_ID;
+      if (ch) {
+        const inviteKey = `channel_${ch}`;
+        if (!inviteLinks[inviteKey]) {
+          const resolvedLink = await getInviteLink(ch);
+          if (resolvedLink) inviteLinks[inviteKey] = resolvedLink;
+        }
+      }
+      const gr = process.env.FORCE_SUB_GROUP_ID;
+      if (gr) {
+        const inviteKey = `group_${gr}`;
+        if (!inviteLinks[inviteKey]) {
+          const resolvedLink = await getInviteLink(gr);
+          if (resolvedLink) inviteLinks[inviteKey] = resolvedLink;
+        }
+      }
+
       const keyboard = buildForceSubKeyboard(
         process.env.FORCE_SUB_CHANNEL_ID,
         process.env.FORCE_SUB_GROUP_ID,
@@ -403,7 +513,6 @@ export default async function handler(req, res) {
 
     // Admin check: only admin can send links in private chat
     // Non-admin users must be in the group to get links
-    const isPrivateChat = message.chat.type === 'private';
     const userIsAdmin = await isAdmin(userId);
     
     if (isPrivateChat && !userIsAdmin) {
