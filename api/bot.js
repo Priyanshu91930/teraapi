@@ -456,12 +456,9 @@ export default async function handler(req, res) {
           process.env.FORCE_SUB_GROUP_ID,
           inviteLinks
         );
-        const detail = forceSub.error ? ` (Error: ${forceSub.error})` : '';
         await sendMessage(chatId, 
-          `🔒 <b>Access Restricted</b>${detail}\n\n` +
-          `You must join our channel/group to use this bot:\n\n` +
-          `• Join Channel: <code>${forceSub.channelId || 'N/A'}</code>\n` +
-          `• Join Group: <code>${process.env.FORCE_SUB_GROUP_ID || 'N/A'}</code>\n\n` +
+          `🔒 <b>Access Restricted</b>\n\n` +
+          `You must join our channel/group to use this bot:\n` +
           `After joining, click <b>✅ I've Joined</b> below.`,
           message.message_id,
           keyboard
@@ -520,11 +517,9 @@ export default async function handler(req, res) {
         process.env.FORCE_SUB_GROUP_ID,
         inviteLinks
       );
-      const detail = forceSub.error ? ` (Error: ${forceSub.error})` : '';
       await sendMessage(chatId, 
-        `🔒 <b>Access Restricted</b>${detail}\n\n` +
-        `You must join our channel to use this bot.\n\n` +
-        `Channel: <code>${forceSub.channelId || process.env.FORCE_SUB_CHANNEL_ID || 'N/A'}</code>\n\n` +
+        `🔒 <b>Access Restricted</b>\n\n` +
+        `You must join our channel/group to use this bot:\n` +
         `After joining, click <b>✅ I've Joined</b> below.`,
         message.message_id,
         keyboard
@@ -558,8 +553,7 @@ export default async function handler(req, res) {
         );
         await sendMessage(chatId, 
           `🔒 <b>Group Membership Required</b>\n\n` +
-          `To use this bot in private chat, you must join our group:\n\n` +
-          `Group: <code>${process.env.FORCE_SUB_GROUP_ID || 'N/A'}</code>\n\n` +
+          `To use this bot in private chat, you must join our group:\n` +
           `After joining, click <b>✅ I've Joined</b> below.`,
           message.message_id,
           keyboard
