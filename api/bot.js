@@ -217,35 +217,6 @@ export default async function handler(req, res) {
       return res.status(200).send('OK');
     }
 
-    // 0. Handle Chat Join Request (for join request mode)
-    if (update.chat_join_request) {
-      const joinRequest = update.chat_join_request;
-      const chatId = joinRequest.chat.id;
-      const userId = joinRequest.from.id;
-      
-      // Only approve if this chat is in our force sub channels/groups
-      const channelIds = process.env.FORCE_SUB_CHANNEL_ID || '';
-      const groupIds = process.env.FORCE_SUB_GROUP_ID || '';
-      const allowedChats = [...channelIds.split(','), ...groupIds.split(',')].map(id => id.trim()).filter(Boolean);
-      
-      if (allowedChats.includes(String(chatId))) {
-        const token = process.env.TELEGRAM_BOT_TOKEN;
-        if (token) {
-          try {
-            await fetch(`https://api.telegram.org/bot${token}/approveChatJoinRequest`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ chat_id: chatId, user_id: userId })
-            });
-            console.log(`[Bot] Approved join request for user ${userId} in chat ${chatId}`);
-          } catch (e) {
-            console.error('[Bot] Failed to approve join request:', e);
-          }
-        }
-      }
-      return res.status(200).send('OK');
-    }
-
     // 1. Handle Callback Query (e.g. user clicks "Get files into telegram")
     if (update.callback_query) {
       const callbackQuery = update.callback_query;
