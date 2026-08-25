@@ -354,14 +354,16 @@ export default async function handler(req, res) {
         // Check channel
         const channelCheck = await checkForceSub(userId);
         if (!channelCheck.ok) {
-          await answerCallbackQuery(callbackQuery.id, '❌ You have not joined the channel yet!', true);
+          const detail = channelCheck.error ? `Error: ${channelCheck.error}` : `Status: ${channelCheck.status}`;
+          await answerCallbackQuery(callbackQuery.id, `❌ Channel check failed! (${detail})`, true);
           return res.status(200).send('OK');
         }
         
         // Check group if configured
         const groupCheck = await checkGroupMembership(userId);
         if (!groupCheck.ok) {
-          await answerCallbackQuery(callbackQuery.id, '❌ You have not joined the group yet!', true);
+          const detail = groupCheck.error ? `Error: ${groupCheck.error}` : `Status: ${groupCheck.status}`;
+          await answerCallbackQuery(callbackQuery.id, `❌ Group check failed! (${detail})`, true);
           return res.status(200).send('OK');
         }
         
@@ -436,8 +438,9 @@ export default async function handler(req, res) {
           process.env.FORCE_SUB_GROUP_ID,
           inviteLinks
         );
+        const detail = forceSub.error ? ` (Error: ${forceSub.error})` : '';
         await sendMessage(chatId, 
-          `🔒 <b>Access Restricted</b>\n\n` +
+          `🔒 <b>Access Restricted</b>${detail}\n\n` +
           `You must join our channel/group to use this bot:\n\n` +
           `• Join Channel: <code>${forceSub.channelId || 'N/A'}</code>\n` +
           `• Join Group: <code>${process.env.FORCE_SUB_GROUP_ID || 'N/A'}</code>\n\n` +
@@ -491,8 +494,9 @@ export default async function handler(req, res) {
         process.env.FORCE_SUB_GROUP_ID,
         inviteLinks
       );
+      const detail = forceSub.error ? ` (Error: ${forceSub.error})` : '';
       await sendMessage(chatId, 
-        `🔒 <b>Access Restricted</b>\n\n` +
+        `🔒 <b>Access Restricted</b>${detail}\n\n` +
         `You must join our channel to use this bot.\n\n` +
         `Channel: <code>${forceSub.channelId || process.env.FORCE_SUB_CHANNEL_ID || 'N/A'}</code>\n\n` +
         `After joining, click <b>✅ I've Joined</b> below.`,
