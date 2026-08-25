@@ -184,18 +184,23 @@ async function checkGroupMembership(userId) {
 }
 
 // Build force sub join keyboard (supports multiple)
-function buildForceSubKeyboard(channelIds, groupIds) {
+// For numeric IDs (-100...), uses invite link from env FORCE_SUB_INVITE_LINKS
+function buildForceSubKeyboard(channelIds, groupIds, inviteLinks = {}) {
   const keyboard = { inline_keyboard: [] };
   const channels = channelIds ? channelIds.split(',').map(id => id.trim()).filter(Boolean) : [];
   const groups = groupIds ? groupIds.split(',').map(id => id.trim()).filter(Boolean) : [];
   
   channels.forEach((ch, i) => {
-    const display = ch.startsWith('@') ? ch : `@${ch}`;
-    keyboard.inline_keyboard.push([{ text: `📢 Join Channel ${channels.length > 1 ? (i+1) : ''}`, url: `https://t.me/${ch.replace('@', '')}` }]);
+    const inviteKey = ch.startsWith('-') ? `channel_${ch}` : `channel_${ch}`;
+    const inviteUrl = inviteLinks[inviteKey] || (ch.startsWith('@') ? `https://t.me/${ch.replace('@', '')}` : `https://t.me/${ch}`);
+    const display = ch.startsWith('@') ? ch : `Channel ${i+1}`;
+    keyboard.inline_keyboard.push([{ text: `📢 Join ${display}`, url: inviteUrl }]);
   });
   groups.forEach((gr, i) => {
-    const display = gr.startsWith('@') ? gr : `@${gr}`;
-    keyboard.inline_keyboard.push([{ text: `👥 Join Group ${groups.length > 1 ? (i+1) : ''}`, url: `https://t.me/${gr.replace('@', '')}` }]);
+    const inviteKey = gr.startsWith('-') ? `group_${gr}` : `group_${gr}`;
+    const inviteUrl = inviteLinks[inviteKey] || (gr.startsWith('@') ? `https://t.me/${gr.replace('@', '')}` : `https://t.me/${gr}`);
+    const display = gr.startsWith('@') ? gr : `Group ${i+1}`;
+    keyboard.inline_keyboard.push([{ text: `👥 Join ${display}`, url: inviteUrl }]);
   });
   keyboard.inline_keyboard.push([{ text: "✅ I've Joined", callback_data: "force_sub_check" }]);
   return keyboard;
@@ -209,6 +214,35 @@ export default async function handler(req, res) {
   try {
     const update = req.body;
     if (!update) {
+      return res.status(200).send('OK');
+    }
+
+    // 0. Handle Chat Join Request (for join request mode)
+    if (update.chat_join_request) {
+      const joinRequest = update.chat_join_request;
+      const chatId = joinRequest.chat.id;
+      const userId = joinRequest.from.id;
+      
+      // Only approve if this chat is in our force sub channels/groups
+      const channelIds = process.env.FORCE_SUB_CHANNEL_ID || '';
+      const groupIds = process.env.FORCE_SUB_GROUP_ID || '';
+      const allowedChats = [...channelIds.split(','), ...groupIds.split(',')].map(id => id.trim()).filter(Boolean);
+      
+      if (allowedChats.includes(String(chatId))) {
+        const token = process.env.TELEGRAM_BOT_TOKEN;
+        if (token) {
+          try {
+            await fetch(`https://api.telegram.org/bot${token}/approveChatJoinRequest`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ chat_id: chatId, user_id: userId })
+            });
+            console.log(`[Bot] Approved join request for user ${userId} in chat ${chatId}`);
+          } catch (e) {
+            console.error('[Bot] Failed to approve join request:', e);
+          }
+        }
+      }
       return res.status(200).send('OK');
     }
 
@@ -333,9 +367,12 @@ export default async function handler(req, res) {
       const userId = message.from.id;
       const forceSub = await checkForceSub(userId);
       if (!forceSub.ok) {
+        const inviteLinks = {};
+        try { Object.assign(inviteLinks, JSON.parse(process.env.FORCE_SUB_INVITE_LINKS || '{}')); } catch {}
         const keyboard = buildForceSubKeyboard(
           process.env.FORCE_SUB_CHANNEL_ID,
-          process.env.FORCE_SUB_GROUP_ID
+          process.env.FORCE_SUB_GROUP_ID,
+          inviteLinks
         );
         await sendMessage(chatId, 
           `🔒 <b>Access Restricted</b>\n\n` +
@@ -366,9 +403,12 @@ export default async function handler(req, res) {
     const userId = message.from.id;
     const forceSub = await checkForceSub(userId);
     if (!forceSub.ok) {
+      const inviteLinks = {};
+      try { Object.assign(inviteLinks, JSON.parse(process.env.FORCE_SUB_INVITE_LINKS || '{}')); } catch {}
       const keyboard = buildForceSubKeyboard(
         process.env.FORCE_SUB_CHANNEL_ID,
-        process.env.FORCE_SUB_GROUP_ID
+        process.env.FORCE_SUB_GROUP_ID,
+        inviteLinks
       );
       await sendMessage(chatId, 
         `🔒 <b>Access Restricted</b>\n\n` +
@@ -399,9 +439,12 @@ export default async function handler(req, res) {
       // Check group membership
       const groupCheck = await checkGroupMembership(userId);
       if (!groupCheck.ok) {
+        const inviteLinks = {};
+        try { Object.assign(inviteLinks, JSON.parse(process.env.FORCE_SUB_INVITE_LINKS || '{}')); } catch {}
         const keyboard = buildForceSubKeyboard(
           process.env.FORCE_SUB_CHANNEL_ID,
-          process.env.FORCE_SUB_GROUP_ID
+          process.env.FORCE_SUB_GROUP_ID,
+          inviteLinks
         );
         await sendMessage(chatId, 
           `🔒 <b>Group Membership Required</b>\n\n` +
