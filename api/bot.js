@@ -1,5 +1,5 @@
 import parseHandler from './parse.js';
-import { connectToDatabase, LeechTask } from '../db.js';
+import { connectToDatabase, LeechTask, User, SystemConfig } from '../db.js';
 
 // Send a simple message to Telegram
 async function sendMessage(chatId, text, replyToMessageId = null, replyMarkup = null) {
@@ -99,6 +99,94 @@ async function editMessageReplyMarkup(chatId, messageId, replyMarkup) {
   }
 }
 
+// Check if user is admin (from DB or env ADMIN_CHAT_ID)
+async function isAdmin(userId) {
+  // Check env ADMIN_CHAT_ID first (comma-separated list)
+  if (process.env.ADMIN_CHAT_ID) {
+    const adminIds = process.env.ADMIN_CHAT_ID.split(',').map(id => id.trim());
+    if (adminIds.includes(String(userId))) return true;
+  }
+  // Check DB for admin role
+  try {
+    const db = await connectToDatabase();
+    if (db) {
+      const user = await User.findOne({ email: userId.toString() });
+      if (user && user.role === 'admin') return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+// Check if user is member of channel (force sub)
+async function checkForceSub(userId) {
+  const channelId = process.env.FORCE_SUB_CHANNEL_ID;
+  if (!channelId) return { ok: true }; // No force sub configured
+  
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return { ok: false, error: 'Bot token missing' };
+  
+  try {
+    const url = `https://api.telegram.org/bot${token}/getChatMember`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: channelId, user_id: userId })
+    });
+    const data = await response.json();
+    if (!data.ok) return { ok: false, error: data.description };
+    const status = data.result.status;
+    // member, administrator, creator = subscribed
+    if (['member', 'administrator', 'creator'].includes(status)) {
+      return { ok: true };
+    }
+    return { ok: false, status, channelId };
+  } catch (err) {
+    console.error('Force sub check error:', err);
+    return { ok: false, error: err.message };
+  }
+}
+
+// Check if user is member of group (for link access)
+async function checkGroupMembership(userId) {
+  const groupId = process.env.FORCE_SUB_GROUP_ID;
+  if (!groupId) return { ok: true }; // No group requirement
+  
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return { ok: false, error: 'Bot token missing' };
+  
+  try {
+    const url = `https://api.telegram.org/bot${token}/getChatMember`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: groupId, user_id: userId })
+    });
+    const data = await response.json();
+    if (!data.ok) return { ok: false, error: data.description };
+    const status = data.result.status;
+    if (['member', 'administrator', 'creator'].includes(status)) {
+      return { ok: true };
+    }
+    return { ok: false, status, groupId };
+  } catch (err) {
+    console.error('Group membership check error:', err);
+    return { ok: false, error: err.message };
+  }
+}
+
+// Build force sub join keyboard
+function buildForceSubKeyboard(channelId, groupId) {
+  const keyboard = { inline_keyboard: [] };
+  if (channelId) {
+    keyboard.inline_keyboard.push([{ text: "📢 Join Channel", url: `https://t.me/${channelId.replace('@', '')}` }]);
+  }
+  if (groupId) {
+    keyboard.inline_keyboard.push([{ text: "👥 Join Group", url: `https://t.me/${groupId.replace('@', '')}` }]);
+  }
+  keyboard.inline_keyboard.push([{ text: "✅ I've Joined", callback_data: "force_sub_check" }]);
+  return keyboard;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(200).send('Bot API is online! Send a POST update from Telegram.');
@@ -169,6 +257,46 @@ export default async function handler(req, res) {
           await answerCallbackQuery(callbackQuery.id, '❌ Database error occurred.');
         }
       }
+
+      // Force Sub Check Callback
+      if (data === 'force_sub_check') {
+        const userId = callbackQuery.from.id;
+        
+        // Check channel
+        const channelCheck = await checkForceSub(userId);
+        if (!channelCheck.ok) {
+          await answerCallbackQuery(callbackQuery.id, '❌ You have not joined the channel yet!', true);
+          return res.status(200).send('OK');
+        }
+        
+        // Check group if configured
+        const groupCheck = await checkGroupMembership(userId);
+        if (!groupCheck.ok) {
+          await answerCallbackQuery(callbackQuery.id, '❌ You have not joined the group yet!', true);
+          return res.status(200).send('OK');
+        }
+        
+        // Both passed - update message
+        await answerCallbackQuery(callbackQuery.id, '✅ Access granted! You can now use the bot.', true);
+        
+        // Update message to show success
+        try {
+          const token = process.env.TELEGRAM_BOT_TOKEN;
+          await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chatId,
+              message_id: messageId,
+              text: '✅ <b>Verification Successful!</b>\n\nYou can now send links to get direct download links.',
+              parse_mode: 'HTML'
+            })
+          });
+        } catch (e) {}
+        
+        return res.status(200).send('OK');
+      }
+      
       return res.status(200).send('OK');
     }
 
@@ -187,6 +315,26 @@ export default async function handler(req, res) {
 
     // Handle commands
     if (text === '/start' || text === '/help') {
+      // Check force sub even for /start
+      const userId = message.from.id;
+      const forceSub = await checkForceSub(userId);
+      if (!forceSub.ok) {
+        const keyboard = buildForceSubKeyboard(
+          process.env.FORCE_SUB_CHANNEL_ID,
+          process.env.FORCE_SUB_GROUP_ID
+        );
+        await sendMessage(chatId, 
+          `🔒 <b>Access Restricted</b>\n\n` +
+          `You must join our channel/group to use this bot:\n\n` +
+          `• Join Channel: <code>${forceSub.channelId || 'N/A'}</code>\n` +
+          `• Join Group: <code>${process.env.FORCE_SUB_GROUP_ID || 'N/A'}</code>\n\n` +
+          `After joining, click <b>✅ I've Joined</b> below.`,
+          message.message_id,
+          keyboard
+        );
+        return res.status(200).send('OK');
+      }
+      
       const welcomeText = `👋 <b>Welcome to TeraBox & Media Downloader Bot!</b>\n\n` +
         `Send me any supported link, and I will generate a direct download link for you.\n\n` +
         `<b>Supported platforms:</b>\n` +
@@ -200,6 +348,25 @@ export default async function handler(req, res) {
       return res.status(200).send('OK');
     }
 
+    // Force sub check for all non-command messages
+    const userId = message.from.id;
+    const forceSub = await checkForceSub(userId);
+    if (!forceSub.ok) {
+      const keyboard = buildForceSubKeyboard(
+        process.env.FORCE_SUB_CHANNEL_ID,
+        process.env.FORCE_SUB_GROUP_ID
+      );
+      await sendMessage(chatId, 
+        `🔒 <b>Access Restricted</b>\n\n` +
+        `You must join our channel to use this bot.\n\n` +
+        `Channel: <code>${forceSub.channelId || process.env.FORCE_SUB_CHANNEL_ID || 'N/A'}</code>\n\n` +
+        `After joining, click <b>✅ I've Joined</b> below.`,
+        message.message_id,
+        keyboard
+      );
+      return res.status(200).send('OK');
+    }
+
     // Detect if it's a URL
     const urlPattern = /(https?:\/\/[^\s]+)/gi;
     const match = text.match(urlPattern);
@@ -207,6 +374,31 @@ export default async function handler(req, res) {
     if (!match) {
       await sendMessage(chatId, '❌ Please send a valid link.', message.message_id);
       return res.status(200).send('OK');
+    }
+
+    // Admin check: only admin can send links in private chat
+    // Non-admin users must be in the group to get links
+    const isPrivateChat = message.chat.type === 'private';
+    const userIsAdmin = await isAdmin(userId);
+    
+    if (isPrivateChat && !userIsAdmin) {
+      // Check group membership
+      const groupCheck = await checkGroupMembership(userId);
+      if (!groupCheck.ok) {
+        const keyboard = buildForceSubKeyboard(
+          process.env.FORCE_SUB_CHANNEL_ID,
+          process.env.FORCE_SUB_GROUP_ID
+        );
+        await sendMessage(chatId, 
+          `🔒 <b>Group Membership Required</b>\n\n` +
+          `To use this bot in private chat, you must join our group:\n\n` +
+          `Group: <code>${process.env.FORCE_SUB_GROUP_ID || 'N/A'}</code>\n\n` +
+          `After joining, click <b>✅ I've Joined</b> below.`,
+          message.message_id,
+          keyboard
+        );
+        return res.status(200).send('OK');
+      }
     }
 
     const targetUrl = match[0];
