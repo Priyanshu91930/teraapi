@@ -117,72 +117,86 @@ async function isAdmin(userId) {
   return false;
 }
 
-// Check if user is member of channel (force sub)
+// Check if user is member of channel(s) (force sub)
 async function checkForceSub(userId) {
-  const channelId = process.env.FORCE_SUB_CHANNEL_ID;
-  if (!channelId) return { ok: true }; // No force sub configured
+  const channelIds = process.env.FORCE_SUB_CHANNEL_ID;
+  if (!channelIds) return { ok: true }; // No force sub configured
+  
+  const channels = channelIds.split(',').map(id => id.trim()).filter(Boolean);
+  if (channels.length === 0) return { ok: true };
   
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return { ok: false, error: 'Bot token missing' };
   
-  try {
-    const url = `https://api.telegram.org/bot${token}/getChatMember`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: channelId, user_id: userId })
-    });
-    const data = await response.json();
-    if (!data.ok) return { ok: false, error: data.description };
-    const status = data.result.status;
-    // member, administrator, creator = subscribed
-    if (['member', 'administrator', 'creator'].includes(status)) {
-      return { ok: true };
+  for (const channelId of channels) {
+    try {
+      const url = `https://api.telegram.org/bot${token}/getChatMember`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: channelId, user_id: userId })
+      });
+      const data = await response.json();
+      if (!data.ok) return { ok: false, error: data.description, channelId };
+      const status = data.result.status;
+      if (!['member', 'administrator', 'creator'].includes(status)) {
+        return { ok: false, status, channelId };
+      }
+    } catch (err) {
+      console.error('Force sub check error:', err);
+      return { ok: false, error: err.message, channelId };
     }
-    return { ok: false, status, channelId };
-  } catch (err) {
-    console.error('Force sub check error:', err);
-    return { ok: false, error: err.message };
   }
+  return { ok: true };
 }
 
-// Check if user is member of group (for link access)
+// Check if user is member of group(s) (for link access)
 async function checkGroupMembership(userId) {
-  const groupId = process.env.FORCE_SUB_GROUP_ID;
-  if (!groupId) return { ok: true }; // No group requirement
+  const groupIds = process.env.FORCE_SUB_GROUP_ID;
+  if (!groupIds) return { ok: true }; // No group requirement
+  
+  const groups = groupIds.split(',').map(id => id.trim()).filter(Boolean);
+  if (groups.length === 0) return { ok: true };
   
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return { ok: false, error: 'Bot token missing' };
   
-  try {
-    const url = `https://api.telegram.org/bot${token}/getChatMember`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: groupId, user_id: userId })
-    });
-    const data = await response.json();
-    if (!data.ok) return { ok: false, error: data.description };
-    const status = data.result.status;
-    if (['member', 'administrator', 'creator'].includes(status)) {
-      return { ok: true };
+  for (const groupId of groups) {
+    try {
+      const url = `https://api.telegram.org/bot${token}/getChatMember`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: groupId, user_id: userId })
+      });
+      const data = await response.json();
+      if (!data.ok) return { ok: false, error: data.description, groupId };
+      const status = data.result.status;
+      if (!['member', 'administrator', 'creator'].includes(status)) {
+        return { ok: false, status, groupId };
+      }
+    } catch (err) {
+      console.error('Group membership check error:', err);
+      return { ok: false, error: err.message, groupId };
     }
-    return { ok: false, status, groupId };
-  } catch (err) {
-    console.error('Group membership check error:', err);
-    return { ok: false, error: err.message };
   }
+  return { ok: true };
 }
 
-// Build force sub join keyboard
-function buildForceSubKeyboard(channelId, groupId) {
+// Build force sub join keyboard (supports multiple)
+function buildForceSubKeyboard(channelIds, groupIds) {
   const keyboard = { inline_keyboard: [] };
-  if (channelId) {
-    keyboard.inline_keyboard.push([{ text: "📢 Join Channel", url: `https://t.me/${channelId.replace('@', '')}` }]);
-  }
-  if (groupId) {
-    keyboard.inline_keyboard.push([{ text: "👥 Join Group", url: `https://t.me/${groupId.replace('@', '')}` }]);
-  }
+  const channels = channelIds ? channelIds.split(',').map(id => id.trim()).filter(Boolean) : [];
+  const groups = groupIds ? groupIds.split(',').map(id => id.trim()).filter(Boolean) : [];
+  
+  channels.forEach((ch, i) => {
+    const display = ch.startsWith('@') ? ch : `@${ch}`;
+    keyboard.inline_keyboard.push([{ text: `📢 Join Channel ${channels.length > 1 ? (i+1) : ''}`, url: `https://t.me/${ch.replace('@', '')}` }]);
+  });
+  groups.forEach((gr, i) => {
+    const display = gr.startsWith('@') ? gr : `@${gr}`;
+    keyboard.inline_keyboard.push([{ text: `👥 Join Group ${groups.length > 1 ? (i+1) : ''}`, url: `https://t.me/${gr.replace('@', '')}` }]);
+  });
   keyboard.inline_keyboard.push([{ text: "✅ I've Joined", callback_data: "force_sub_check" }]);
   return keyboard;
 }
