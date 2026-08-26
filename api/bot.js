@@ -1,6 +1,12 @@
 import parseHandler from './parse.js';
 import { connectToDatabase, LeechTask, User, SystemConfig } from '../db.js';
 
+// Hardcoded invite links for force sub channels (with "Require Approval" ON)
+const FORCE_SUB_INVITE_LINKS = {
+  'channel_-1003983694204': 'https://t.me/+cySPj7iDogFkMzc1',
+  'channel_-1004396922446': 'https://t.me/+exoDGnQTZwM0N2M1',
+};
+
 // Send a simple message to Telegram
 async function sendMessage(chatId, text, replyToMessageId = null, replyMarkup = null) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -507,8 +513,7 @@ export default async function handler(req, res) {
       const userId = message.from.id;
       const forceSub = await checkForceSub(userId);
       if (!forceSub.ok) {
-        const inviteLinks = {};
-        try { Object.assign(inviteLinks, JSON.parse(process.env.FORCE_SUB_INVITE_LINKS || '{}')); } catch {}
+        const inviteLinks = FORCE_SUB_INVITE_LINKS;
         
         // Dynamically fetch invite links if not configured
         const forceChannel = process.env.FORCE_SUB_CHANNEL_ID || '';
@@ -673,8 +678,7 @@ await sendMessage(chatId, welcomeText, message.message_id);
       // Check group membership
       const groupCheck = await checkGroupMembership(userId);
       if (!groupCheck.ok) {
-        const inviteLinks = {};
-        try { Object.assign(inviteLinks, JSON.parse(process.env.FORCE_SUB_INVITE_LINKS || '{}')); } catch {}
+        const inviteLinks = FORCE_SUB_INVITE_LINKS;
         const keyboard = buildForceSubKeyboard(
           process.env.FORCE_SUB_CHANNEL_ID,
           process.env.FORCE_SUB_GROUP_ID,
