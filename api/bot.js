@@ -271,6 +271,7 @@ async function checkGroupMembership(userId) {
   
   for (const groupId of groups) {
     try {
+      console.log(`[GroupCheck] Checking group ${groupId} for user ${userId}`);
       const url = `https://api.telegram.org/bot${token}/getChatMember`;
       const response = await fetch(url, {
         method: 'POST',
@@ -278,8 +279,31 @@ async function checkGroupMembership(userId) {
         body: JSON.stringify({ chat_id: groupId, user_id: userId })
       });
       const data = await response.json();
-      if (!data.ok) return { ok: false, error: data.description, groupId };
+      console.log(`[GroupCheck] Response for ${groupId}:`, JSON.stringify(data));
+      if (!data.ok) {
+        console.error(`[GroupCheck] API error for ${groupId}:`, data.description);
+        // Try without -100 prefix
+        const altId = groupId.startsWith('-100') ? groupId.substring(4) : `-100${groupId}`;
+        console.log(`[GroupCheck] Trying alternative ID: ${altId}`);
+        const altResponse = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: altId, user_id: userId })
+        });
+        const altData = await altResponse.json();
+        console.log(`[GroupCheck] Alt response for ${altId}:`, JSON.stringify(altData));
+        if (altData.ok) {
+          const status = altData.result.status;
+          console.log(`[GroupCheck] User ${userId} status in ${altId}: ${status}`);
+          if (!['member', 'administrator', 'creator'].includes(status)) {
+            return { ok: false, status, groupId: altId };
+          }
+          continue;
+        }
+        return { ok: false, error: data.description, groupId };
+      }
       const status = data.result.status;
+      console.log(`[GroupCheck] User ${userId} status in ${groupId}: ${status}`);
       if (!['member', 'administrator', 'creator'].includes(status)) {
         return { ok: false, status, groupId };
       }
