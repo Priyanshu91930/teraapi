@@ -411,6 +411,7 @@ export default async function handler(req, res) {
 
     // 1. Try resolving anonymously first to avoid regional cluster redirects (like dm.1024tera.com)
     const anonApp = new TeraBoxApp("");
+    anonApp.TERABOX_TIMEOUT = 2000; // Limit anonymous guest check to 2 seconds to avoid wasting time
     anonApp.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
     anonApp.TERABOX_DOMAIN = cleanUrl.includes('1024tera.com') || cleanUrl.includes('1024terabox.com') || cleanUrl.includes('terasharefile.com')
       ? '1024tera.com'
