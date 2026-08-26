@@ -412,9 +412,11 @@ export default async function handler(req, res) {
       // Force Sub Check Callback
       if (data === 'force_sub_check') {
         const userId = callbackQuery.from.id;
+        console.log(`[ForceSub Callback] User ${userId} clicked "I've Joined", checking...`);
         
         // Check channel
         const channelCheck = await checkForceSub(userId);
+        console.log(`[ForceSub Callback] Channel check result:`, JSON.stringify(channelCheck));
         if (!channelCheck.ok) {
           const detail = channelCheck.error ? `Error: ${channelCheck.error}` : `Status: ${channelCheck.status}`;
           await answerCallbackQuery(callbackQuery.id, `❌ Channel check failed! (${detail})`, true);
@@ -423,6 +425,7 @@ export default async function handler(req, res) {
         
         // Check group if configured
         const groupCheck = await checkGroupMembership(userId);
+        console.log(`[ForceSub Callback] Group check result:`, JSON.stringify(groupCheck));
         if (!groupCheck.ok) {
           const detail = groupCheck.error ? `Error: ${groupCheck.error}` : `Status: ${groupCheck.status}`;
           await answerCallbackQuery(callbackQuery.id, `❌ Group check failed! (${detail})`, true);
