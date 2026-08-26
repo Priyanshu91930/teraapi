@@ -408,32 +408,30 @@ export default async function handler(req, res) {
     }
 
     // Always strip the leading '1' from the shortUrl because the /share/list API expects the raw surl token
-    const strippedShortUrl = shortUrl.replace(/^1/, '');
-
-    // 1. Try resolving anonymously first to avoid regional cluster redirects (like dm.1024tera.com)
-    const anonApp = new TeraBoxApp("");
-    anonApp.TERABOX_TIMEOUT = 2000; // Limit anonymous guest check to 2 seconds to avoid wasting time
-    anonApp.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-    anonApp.TERABOX_DOMAIN = cleanUrl.includes('1024tera.com') || cleanUrl.includes('1024terabox.com') || cleanUrl.includes('terasharefile.com')
-      ? '1024tera.com'
-      : 'terabox.com';
-    anonApp.params.whost = `https://www.${anonApp.TERABOX_DOMAIN}`;
-    anonApp.params.uhost = `https://c-all.${anonApp.TERABOX_DOMAIN}`;
-
-    let listData;
-    try {
-      listData = await anonApp.shortUrlList(strippedShortUrl);
-    } catch (e) {
-      // ignore
-    }
-
-    // 2. If anonymous fails, returns error, or lacks a dlink (direct download link), fallback to logged-in NDUS session
-    const hasDlink = listData && listData.list && listData.list[0] && listData.list[0].dlink;
+    const strippedShortUrl = shortUrl.replace(/^1/, '');    // 1. Bypass anonymous check completely to speed up response times by avoiding redundant slow network requests
+    let listData = null;
     let tokenExpiredDetected = false;
     let dlinkRecoveryFailed = false;
 
-     if (!listData || listData.errno !== 0 || !hasDlink) {
-      console.log(`[Parse] Anonymous resolution returned no dlink. Falling back to logged-in NDUS session...`);
+    // Dummy anonApp object to preserve compatibility with downstream parameters
+    const anonApp = {
+      params: {
+        whost: cleanUrl.includes('1024tera.com') || cleanUrl.includes('1024terabox.com') || cleanUrl.includes('terasharefile.com')
+          ? 'https://www.1024tera.com'
+          : 'https://www.terabox.com',
+        uhost: cleanUrl.includes('1024tera.com') || cleanUrl.includes('1024terabox.com') || cleanUrl.includes('terasharefile.com')
+          ? 'https://c-all.1024tera.com'
+          : 'https://c-all.terabox.com',
+        ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      },
+      TERABOX_DOMAIN: cleanUrl.includes('1024tera.com') || cleanUrl.includes('1024terabox.com') || cleanUrl.includes('terasharefile.com')
+        ? '1024tera.com'
+        : 'terabox.com'
+    };
+
+    // 2. Resolve directly using logged-in NDUS session
+    if (true) {
+      console.log(`[Parse] Resolving directly using logged-in NDUS session...`);
       let ndusToken = await getNdusToken();
       // Bootstrap: no token anywhere (DB + env empty)? Try auto-login directly
       // so the system can self-start with just EMAIL/PASSWORD credentials.
