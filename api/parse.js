@@ -106,8 +106,9 @@ async function sendTelegramTokenAlert() {
   const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || process.env.CHAT_ID || "1892511025"; // Fallback to user ID from logs
   if (!botToken || !adminChatId) return;
   console.log(`[Telegram Alert] Sending token expiry warning to admin chat: ${adminChatId}`);
-  await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+  fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: 'POST',
+    signal: AbortSignal.timeout(2000),
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       chat_id: adminChatId,
@@ -482,7 +483,7 @@ export default async function handler(req, res) {
 
     // Trigger Telegram notification if token expiry is detected
     if (tokenExpiredDetected) {
-      await sendTelegramTokenAlert();
+      sendTelegramTokenAlert().catch(err => console.error('[Telegram] Alert failed:', err.message));
       tokenExpiredDetected = false;
     }
 
@@ -660,7 +661,7 @@ export default async function handler(req, res) {
     // If dlink recovery still failed with a session present, the token is
     // almost certainly expired -> alert admin (deduplicated per request)
     if (dlinkRecoveryFailed) {
-      await sendTelegramTokenAlert();
+      sendTelegramTokenAlert().catch(err => console.error('[Telegram] Alert failed:', err.message));
     }
 
     return res.status(200).json({
