@@ -173,22 +173,47 @@ async function isAdmin(userId) {
   return false;
 }
 
-// Check if user is member of channel(s) (force sub) OR has pending join request
-async function checkForceSub(userId) {
+// Get invite links mapping (merges hardcoded links and env configs, and dynamically injects group link)
+function getInviteLinks() {
+  const links = { ...FORCE_SUB_INVITE_LINKS };
+  
+  try {
+    Object.assign(links, JSON.parse(process.env.FORCE_SUB_INVITE_LINKS || '{}'));
+  } catch {}
+  
+  const forceGroup = process.env.FORCE_SUB_GROUP_ID || '';
+  const groups = forceGroup.split(',').map(id => id.trim()).filter(Boolean);
+  if (groups.length > 0) {
+    const mainGroup = groups[0];
+    const key = `group_${mainGroup}`;
+    if (!links[key]) {
+      links[key] = 'https://t.me/+L7tcuoCsTaMxZWVl';
+    }
+  }
+  
+  return links;
+}
+
+// Check all channels and groups, return lists of missing chats
+async function getMissingForceSubs(userId) {
   // Bypass for Telegram system / anonymous admin accounts (posting anonymously as group admin)
   if ([1087968824, 777000].includes(Number(userId))) {
-    return { ok: true };
+    return { ok: true, missingChannels: [], missingGroups: [] };
   }
 
-  const channelIds = process.env.FORCE_SUB_CHANNEL_ID;
-  if (!channelIds) return { ok: true }; // No force sub configured
-  
-  const channels = channelIds.split(',').map(id => id.trim()).filter(Boolean);
-  if (channels.length === 0) return { ok: true };
-  
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) return { ok: false, error: 'Bot token missing' };
-  
+  if (!token) return { ok: false, error: 'Bot token missing', missingChannels: [], missingGroups: [] };
+
+  const channelIds = process.env.FORCE_SUB_CHANNEL_ID || '';
+  const groupIds = process.env.FORCE_SUB_GROUP_ID || '';
+
+  const channels = channelIds.split(',').map(id => id.trim()).filter(Boolean);
+  const groups = groupIds.split(',').map(id => id.trim()).filter(Boolean);
+
+  const missingChannels = [];
+  const missingGroups = [];
+
+  // Check Channels
   for (const channelId of channels) {
     try {
       console.log(`[ForceSub] Checking channel ${channelId} for user ${userId}`);
@@ -202,64 +227,40 @@ async function checkForceSub(userId) {
       console.log(`[ForceSub] Response for ${channelId}:`, JSON.stringify(data));
       if (!data.ok) {
         console.error(`[ForceSub] API error for ${channelId}:`, data.description);
-        return { ok: false, error: data.description, channelId };
+        missingChannels.push(channelId);
+        continue;
       }
       const status = data.result.status;
       console.log(`[ForceSub] User ${userId} status in ${channelId}: ${status}`);
       
-      // Allow: member, administrator, creator
       if (['member', 'administrator', 'creator'].includes(status)) {
-        continue; // Check next channel
+        continue;
       }
       
-      // If status is 'left' - check if they have a pending join request in DB
       if (status === 'left') {
-        console.log(`[ForceSub] User ${userId} has status 'left' in ${channelId}, checking pending join requests in DB...`);
         try {
-          const db = await connectToDatabase();
-          if (db) {
-            const chatIds = [Number(channelId)];
-            const altId = channelId.startsWith('-100') ? channelId.substring(4) : `-100${channelId}`;
-            if (!isNaN(Number(altId))) {
-              chatIds.push(Number(altId));
-            }
-            const req = await JoinRequest.findOne({ userId, chatId: { $in: chatIds }, status: 'pending' });
-            if (req) {
-              console.log(`[ForceSub] User ${userId} has PENDING join request in DB for ${channelId} - ALLOWED`);
-              continue; // Allow - they requested to join
-            }
+          await connectToDatabase();
+          const chatIds = [Number(channelId)];
+          const altId = channelId.startsWith('-100') ? channelId.substring(4) : `-100${channelId}`;
+          if (!isNaN(Number(altId))) chatIds.push(Number(altId));
+          const req = await JoinRequest.findOne({ userId, chatId: { $in: chatIds }, status: 'pending' });
+          if (req) {
+            console.log(`[ForceSub] User ${userId} has PENDING join request in DB for ${channelId} - ALLOWED`);
+            continue;
           }
         } catch (dbErr) {
           console.error(`[ForceSub] DB error checking pending join request:`, dbErr);
         }
       }
       
-      // Not a member, not admin, no pending request
-      return { ok: false, status, channelId };
+      missingChannels.push(channelId);
     } catch (err) {
-      console.error('Force sub check error:', err);
-      return { ok: false, error: err.message, channelId };
+      console.error(`[ForceSub] Error checking channel ${channelId}:`, err);
+      missingChannels.push(channelId);
     }
   }
-  return { ok: true };
-}
 
-// Check if user is member of group(s) (for link access)
-async function checkGroupMembership(userId) {
-  // Bypass for Telegram system / anonymous admin accounts (posting anonymously as group admin)
-  if ([1087968824, 777000].includes(Number(userId))) {
-    return { ok: true };
-  }
-
-  const groupIds = process.env.FORCE_SUB_GROUP_ID;
-  if (!groupIds) return { ok: true }; // No group requirement
-  
-  const groups = groupIds.split(',').map(id => id.trim()).filter(Boolean);
-  if (groups.length === 0) return { ok: true };
-  
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) return { ok: false, error: 'Bot token missing' };
-  
+  // Check Groups
   for (const groupId of groups) {
     try {
       console.log(`[GroupCheck] Checking group ${groupId} for user ${userId}`);
@@ -272,73 +273,58 @@ async function checkGroupMembership(userId) {
       const data = await response.json();
       console.log(`[GroupCheck] Response for ${groupId}:`, JSON.stringify(data));
       if (!data.ok) {
-        console.error(`[GroupCheck] API error for ${groupId}:`, data.description);
-        // Try without -100 prefix
         const altId = groupId.startsWith('-100') ? groupId.substring(4) : `-100${groupId}`;
-        console.log(`[GroupCheck] Trying alternative ID: ${altId}`);
         const altResponse = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ chat_id: altId, user_id: userId })
         });
         const altData = await altResponse.json();
-        console.log(`[GroupCheck] Alt response for ${altId}:`, JSON.stringify(altData));
         if (altData.ok) {
           const status = altData.result.status;
-          console.log(`[GroupCheck] User ${userId} status in ${altId}: ${status}`);
-          if (!['member', 'administrator', 'creator'].includes(status)) {
-            if (status === 'left') {
-              console.log(`[GroupCheck] User ${userId} has status 'left' in ${altId}, checking pending join requests in DB...`);
-              try {
-                const db = await connectToDatabase();
-                if (db) {
-                  const req = await JoinRequest.findOne({ userId, chatId: Number(altId), status: 'pending' });
-                  if (req) {
-                    console.log(`[GroupCheck] User ${userId} has PENDING join request in DB for ${altId} - ALLOWED`);
-                    continue; // Allow access
-                  }
-                }
-              } catch (dbErr) {
-                console.error(`[GroupCheck] DB error checking pending join request:`, dbErr);
-              }
-            }
-            return { ok: false, status, groupId: altId };
+          if (['member', 'administrator', 'creator'].includes(status)) {
+            continue;
           }
-          continue;
+          if (status === 'left') {
+            try {
+              await connectToDatabase();
+              const req = await JoinRequest.findOne({ userId, chatId: Number(altId), status: 'pending' });
+              if (req) continue;
+            } catch (dbErr) {
+              console.error(`[GroupCheck] DB error:`, dbErr);
+            }
+          }
         }
-        return { ok: false, error: data.description, groupId };
+        missingGroups.push(groupId);
+        continue;
       }
+      
       const status = data.result.status;
-      console.log(`[GroupCheck] User ${userId} status in ${groupId}: ${status}`);
-      if (!['member', 'administrator', 'creator'].includes(status)) {
-        if (status === 'left') {
-          console.log(`[GroupCheck] User ${userId} has status 'left' in ${groupId}, checking pending join requests in DB...`);
-          try {
-            const db = await connectToDatabase();
-            if (db) {
-              const chatIds = [Number(groupId)];
-              const altId = groupId.startsWith('-100') ? groupId.substring(4) : `-100${groupId}`;
-              if (!isNaN(Number(altId))) {
-                chatIds.push(Number(altId));
-              }
-              const req = await JoinRequest.findOne({ userId, chatId: { $in: chatIds }, status: 'pending' });
-              if (req) {
-                console.log(`[GroupCheck] User ${userId} has PENDING join request in DB for ${groupId} - ALLOWED`);
-                continue; // Allow access
-              }
-            }
-          } catch (dbErr) {
-            console.error(`[GroupCheck] DB error checking pending join request:`, dbErr);
-          }
-        }
-        return { ok: false, status, groupId };
+      if (['member', 'administrator', 'creator'].includes(status)) {
+        continue;
       }
+      if (status === 'left') {
+        try {
+          await connectToDatabase();
+          const chatIds = [Number(groupId)];
+          const altId = groupId.startsWith('-100') ? groupId.substring(4) : `-100${groupId}`;
+          if (!isNaN(Number(altId))) chatIds.push(Number(altId));
+          const req = await JoinRequest.findOne({ userId, chatId: { $in: chatIds }, status: 'pending' });
+          if (req) continue;
+        } catch (dbErr) {
+          console.error(`[GroupCheck] DB error:`, dbErr);
+        }
+      }
+      
+      missingGroups.push(groupId);
     } catch (err) {
-      console.error('Group membership check error:', err);
-      return { ok: false, error: err.message, groupId };
+      console.error(`[GroupCheck] Error checking group ${groupId}:`, err);
+      missingGroups.push(groupId);
     }
   }
-  return { ok: true };
+
+  const ok = missingChannels.length === 0 && missingGroups.length === 0;
+  return { ok, missingChannels, missingGroups };
 }
 
 // Build force sub join keyboard (supports multiple)
@@ -519,21 +505,37 @@ export default async function handler(req, res) {
         const userId = callbackQuery.from.id;
         console.log(`[ForceSub Callback] User ${userId} clicked "I've Joined", checking...`);
         
-        // Check channel
-        const channelCheck = await checkForceSub(userId);
-        console.log(`[ForceSub Callback] Channel check result:`, JSON.stringify(channelCheck));
-        if (!channelCheck.ok) {
-          const detail = channelCheck.error ? `Error: ${channelCheck.error}` : `Status: ${channelCheck.status}`;
-          await answerCallbackQuery(callbackQuery.id, `❌ Channel check failed! (${detail})`, true);
-          return res.status(200).send('OK');
-        }
+        const check = await getMissingForceSubs(userId, true);
+        console.log(`[ForceSub Callback] Check result:`, JSON.stringify(check));
         
-        // Check group if configured
-        const groupCheck = await checkGroupMembership(userId);
-        console.log(`[ForceSub Callback] Group check result:`, JSON.stringify(groupCheck));
-        if (!groupCheck.ok) {
-          const detail = groupCheck.error ? `Error: ${groupCheck.error}` : `Status: ${groupCheck.status}`;
-          await answerCallbackQuery(callbackQuery.id, `❌ Group check failed! (${detail})`, true);
+        if (!check.ok) {
+          await answerCallbackQuery(callbackQuery.id, `❌ You still need to join the remaining channels/groups!`, true);
+          
+          const inviteLinks = getInviteLinks();
+          
+          // Dynamically fetch invite links for missing ones
+          for (const ch of check.missingChannels) {
+            const inviteKey = `channel_${ch}`;
+            if (!inviteLinks[inviteKey]) {
+              const resolvedLink = await getInviteLink(ch);
+              if (resolvedLink) inviteLinks[inviteKey] = resolvedLink;
+            }
+          }
+          for (const gr of check.missingGroups) {
+            const inviteKey = `group_${gr}`;
+            if (!inviteLinks[inviteKey]) {
+              const resolvedLink = await getInviteLink(gr);
+              if (resolvedLink) inviteLinks[inviteKey] = resolvedLink;
+            }
+          }
+
+          const keyboard = buildForceSubKeyboard(
+            check.missingChannels.join(','),
+            check.missingGroups.join(','),
+            inviteLinks
+          );
+
+          await editMessageReplyMarkup(chatId, messageId, keyboard);
           return res.status(200).send('OK');
         }
         
@@ -586,44 +588,26 @@ export default async function handler(req, res) {
     if (text === '/start' || text === '/help') {
       // Check force sub even for /start
       const userId = message.from.id;
-      const forceSub = await checkForceSub(userId);
-      if (!forceSub.ok) {
-        const inviteLinks = FORCE_SUB_INVITE_LINKS;
+      const check = await getMissingForceSubs(userId, false);
+      if (!check.ok) {
+        const inviteLinks = getInviteLinks();
         
-        // Dynamically fetch invite links if not configured
-        const forceChannel = process.env.FORCE_SUB_CHANNEL_ID || '';
-        const forceGroup = process.env.FORCE_SUB_GROUP_ID || '';
-        
-        const channels = forceChannel.split(',').map(id => id.trim()).filter(Boolean);
-        const groups = forceGroup.split(',').map(id => id.trim()).filter(Boolean);
-        
-        if (forceSub.channelId && !channels.includes(forceSub.channelId)) {
-          channels.push(forceSub.channelId);
-        }
-
-        for (const ch of channels) {
+        for (const ch of check.missingChannels) {
           const inviteKey = `channel_${ch}`;
           if (!inviteLinks[inviteKey]) {
             const resolvedLink = await getInviteLink(ch);
             if (resolvedLink) inviteLinks[inviteKey] = resolvedLink;
           }
         }
-        for (const gr of groups) {
-          const inviteKey = `group_${gr}`;
-          if (!inviteLinks[inviteKey]) {
-            const resolvedLink = await getInviteLink(gr);
-            if (resolvedLink) inviteLinks[inviteKey] = resolvedLink;
-          }
-        }
 
         const keyboard = buildForceSubKeyboard(
-          process.env.FORCE_SUB_CHANNEL_ID,
-          process.env.FORCE_SUB_GROUP_ID,
+          check.missingChannels.join(','),
+          '',
           inviteLinks
         );
         await sendMessage(chatId, 
           `🔒 <b>Access Restricted</b>\n\n` +
-          `You must join our channel/group to use this bot:\n` +
+          `You must join our channel to use this bot:\n` +
           `After joining, click <b>✅ I've Joined</b> below.`,
           message.message_id,
           keyboard
@@ -690,30 +674,20 @@ await sendMessage(chatId, welcomeText, message.message_id);
     }
 
     // Force sub check for all non-command messages
-    const forceSub = await checkForceSub(userId);
-    if (!forceSub.ok) {
-      const inviteLinks = {};
-      try { Object.assign(inviteLinks, JSON.parse(process.env.FORCE_SUB_INVITE_LINKS || '{}')); } catch {}
+    const includeGroups = isPrivateChat && !userIsAdmin;
+    const check = await getMissingForceSubs(userId, includeGroups);
+    if (!check.ok) {
+      const inviteLinks = getInviteLinks();
       
-      // Dynamically fetch invite links if not configured
-      const forceChannel = process.env.FORCE_SUB_CHANNEL_ID || '';
-      const forceGroup = process.env.FORCE_SUB_GROUP_ID || '';
-      
-      const channels = forceChannel.split(',').map(id => id.trim()).filter(Boolean);
-      const groups = forceGroup.split(',').map(id => id.trim()).filter(Boolean);
-      
-      if (forceSub.channelId && !channels.includes(forceSub.channelId)) {
-        channels.push(forceSub.channelId);
-      }
-
-      for (const ch of channels) {
+      // Dynamically fetch invite links for missing ones
+      for (const ch of check.missingChannels) {
         const inviteKey = `channel_${ch}`;
         if (!inviteLinks[inviteKey]) {
           const resolvedLink = await getInviteLink(ch);
           if (resolvedLink) inviteLinks[inviteKey] = resolvedLink;
         }
       }
-      for (const gr of groups) {
+      for (const gr of check.missingGroups) {
         const inviteKey = `group_${gr}`;
         if (!inviteLinks[inviteKey]) {
           const resolvedLink = await getInviteLink(gr);
@@ -722,14 +696,23 @@ await sendMessage(chatId, welcomeText, message.message_id);
       }
 
       const keyboard = buildForceSubKeyboard(
-        process.env.FORCE_SUB_CHANNEL_ID,
-        process.env.FORCE_SUB_GROUP_ID,
+        check.missingChannels.join(','),
+        check.missingGroups.join(','),
         inviteLinks
       );
-      await sendMessage(chatId, 
-        `🔒 <b>Access Restricted</b>\n\n` +
+
+      let restrictionText = `🔒 <b>Access Restricted</b>\n\n` +
         `You must join our channel/group to use this bot:\n` +
-        `After joining, click <b>✅ I've Joined</b> below.`,
+        `After joining, click <b>✅ I've Joined</b> below.`;
+
+      if (check.missingChannels.length === 0 && check.missingGroups.length > 0) {
+        restrictionText = `🔒 <b>Group Membership Required</b>\n\n` +
+          `To use this bot in private chat, you must join our group:\n` +
+          `After joining, click <b>✅ I've Joined</b> below.`;
+      }
+
+      await sendMessage(chatId, 
+        restrictionText,
         message.message_id,
         keyboard
       );
@@ -748,27 +731,6 @@ await sendMessage(chatId, welcomeText, message.message_id);
     // Admin check: only admin can send links in private chat
     // Non-admin users must be in the group to get links
     const userIsAdmin = await isAdmin(userId);
-    
-    if (isPrivateChat && !userIsAdmin) {
-      // Check group membership
-      const groupCheck = await checkGroupMembership(userId);
-      if (!groupCheck.ok) {
-        const inviteLinks = FORCE_SUB_INVITE_LINKS;
-        const keyboard = buildForceSubKeyboard(
-          process.env.FORCE_SUB_CHANNEL_ID,
-          process.env.FORCE_SUB_GROUP_ID,
-          inviteLinks
-        );
-        await sendMessage(chatId, 
-          `🔒 <b>Group Membership Required</b>\n\n` +
-          `To use this bot in private chat, you must join our group:\n` +
-          `After joining, click <b>✅ I've Joined</b> below.`,
-          message.message_id,
-          keyboard
-        );
-        return res.status(200).send('OK');
-      }
-    }
 
     const targetUrl = match[0];
 
