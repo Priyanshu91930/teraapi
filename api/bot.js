@@ -1,5 +1,5 @@
 import parseHandler from './parse.js';
-import { connectToDatabase, LeechTask, User, SystemConfig } from '../db.js';
+import { connectToDatabase, LeechTask, User, SystemConfig, JoinRequest } from '../db.js';
 
 // Hardcoded invite links for force sub channels (with "Require Approval" ON)
 const FORCE_SUB_INVITE_LINKS = {
@@ -212,40 +212,25 @@ async function checkForceSub(userId) {
         continue; // Check next channel
       }
       
-      // If status is 'left' - check if they have a pending join request
+      // If status is 'left' - check if they have a pending join request in DB
       if (status === 'left') {
-        console.log(`[ForceSub] User ${userId} has status 'left' in ${channelId}, checking pending join requests...`);
-        const joinReqUrl = `https://api.telegram.org/bot${token}/getChatJoinRequests`;
-        
-        // Try both formats: with and without -100 prefix
-        const channelIdsToTry = [channelId];
-        if (channelId.startsWith('-100')) {
-          channelIdsToTry.push(channelId.substring(4)); // Remove -100 prefix
-        }
-        
-        let hasPending = false;
-        for (const tryId of channelIdsToTry) {
-          const joinReqResp = await fetch(joinReqUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: tryId })
-          });
-          const joinReqData = await joinReqResp.json();
-          console.log(`[ForceSub] Join requests for ${tryId}:`, JSON.stringify(joinReqData));
-          
-          if (joinReqData.ok && joinReqData.result && joinReqData.result.length > 0) {
-            hasPending = joinReqData.result.some(req => req.user.id === userId);
-            if (hasPending) {
-              console.log(`[ForceSub] User ${userId} has PENDING join request in ${tryId} - ALLOWED`);
-              break;
+        console.log(`[ForceSub] User ${userId} has status 'left' in ${channelId}, checking pending join requests in DB...`);
+        try {
+          const db = await connectToDatabase();
+          if (db) {
+            const chatIds = [Number(channelId)];
+            const altId = channelId.startsWith('-100') ? channelId.substring(4) : `-100${channelId}`;
+            if (!isNaN(Number(altId))) {
+              chatIds.push(Number(altId));
             }
-          } else if (joinReqData.error_code === 400 && joinReqData.description?.includes('CHAT_ADMIN_REQUIRED')) {
-            console.error(`[ForceSub] Bot not admin or lacks permission in ${tryId}`);
+            const req = await JoinRequest.findOne({ userId, chatId: { $in: chatIds }, status: 'pending' });
+            if (req) {
+              console.log(`[ForceSub] User ${userId} has PENDING join request in DB for ${channelId} - ALLOWED`);
+              continue; // Allow - they requested to join
+            }
           }
-        }
-        
-        if (hasPending) {
-          continue; // Allow - they requested to join
+        } catch (dbErr) {
+          console.error(`[ForceSub] DB error checking pending join request:`, dbErr);
         }
       }
       
@@ -302,6 +287,21 @@ async function checkGroupMembership(userId) {
           const status = altData.result.status;
           console.log(`[GroupCheck] User ${userId} status in ${altId}: ${status}`);
           if (!['member', 'administrator', 'creator'].includes(status)) {
+            if (status === 'left') {
+              console.log(`[GroupCheck] User ${userId} has status 'left' in ${altId}, checking pending join requests in DB...`);
+              try {
+                const db = await connectToDatabase();
+                if (db) {
+                  const req = await JoinRequest.findOne({ userId, chatId: Number(altId), status: 'pending' });
+                  if (req) {
+                    console.log(`[GroupCheck] User ${userId} has PENDING join request in DB for ${altId} - ALLOWED`);
+                    continue; // Allow access
+                  }
+                }
+              } catch (dbErr) {
+                console.error(`[GroupCheck] DB error checking pending join request:`, dbErr);
+              }
+            }
             return { ok: false, status, groupId: altId };
           }
           continue;
@@ -311,6 +311,26 @@ async function checkGroupMembership(userId) {
       const status = data.result.status;
       console.log(`[GroupCheck] User ${userId} status in ${groupId}: ${status}`);
       if (!['member', 'administrator', 'creator'].includes(status)) {
+        if (status === 'left') {
+          console.log(`[GroupCheck] User ${userId} has status 'left' in ${groupId}, checking pending join requests in DB...`);
+          try {
+            const db = await connectToDatabase();
+            if (db) {
+              const chatIds = [Number(groupId)];
+              const altId = groupId.startsWith('-100') ? groupId.substring(4) : `-100${groupId}`;
+              if (!isNaN(Number(altId))) {
+                chatIds.push(Number(altId));
+              }
+              const req = await JoinRequest.findOne({ userId, chatId: { $in: chatIds }, status: 'pending' });
+              if (req) {
+                console.log(`[GroupCheck] User ${userId} has PENDING join request in DB for ${groupId} - ALLOWED`);
+                continue; // Allow access
+              }
+            }
+          } catch (dbErr) {
+            console.error(`[GroupCheck] DB error checking pending join request:`, dbErr);
+          }
+        }
         return { ok: false, status, groupId };
       }
     } catch (err) {
@@ -372,6 +392,61 @@ export default async function handler(req, res) {
   try {
     const update = req.body;
     if (!update) {
+      return res.status(200).send('OK');
+    }
+
+    // Handle Chat Join Request updates (record as pending in DB)
+    if (update.chat_join_request) {
+      const { chat, from } = update.chat_join_request;
+      const chatId = chat.id;
+      const userId = from.id;
+      const username = from.username || '';
+      const firstName = from.first_name || '';
+      console.log(`[JoinRequest] Received join request from ${userId} (@${username}) ${firstName} for chat ${chatId}`);
+      
+      try {
+        await connectToDatabase();
+        await JoinRequest.findOneAndUpdate(
+          { userId, chatId },
+          { status: 'pending', createdAt: new Date() },
+          { upsert: true }
+        );
+        console.log(`[JoinRequest] Recorded pending request for user ${userId} in chat ${chatId}`);
+      } catch (err) {
+        console.error('Error saving join request:', err);
+      }
+      return res.status(200).send('OK');
+    }
+
+    // Handle Chat Member updates (track when approved or left/kicked)
+    if (update.chat_member) {
+      const { chat, new_chat_member } = update.chat_member;
+      const chatId = chat.id;
+      const userId = new_chat_member.user.id;
+      const status = new_chat_member.status;
+      
+      console.log(`[ChatMember] User ${userId} status in ${chatId} changed to ${status}`);
+      
+      try {
+        await connectToDatabase();
+        if (['member', 'administrator', 'creator'].includes(status)) {
+          await JoinRequest.findOneAndUpdate(
+            { userId, chatId },
+            { status: 'approved' },
+            { upsert: false }
+          );
+          console.log(`[ChatMember] Updated user ${userId} request in chat ${chatId} to approved`);
+        } else if (['left', 'kicked'].includes(status)) {
+          await JoinRequest.findOneAndUpdate(
+            { userId, chatId },
+            { status: 'declined' },
+            { upsert: false }
+          );
+          console.log(`[ChatMember] Updated user ${userId} request in chat ${chatId} to declined`);
+        }
+      } catch (err) {
+        console.error('Error updating join request from chat_member update:', err);
+      }
       return res.status(200).send('OK');
     }
 

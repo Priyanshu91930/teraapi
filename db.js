@@ -144,4 +144,16 @@ const SystemConfigSchema = new mongoose.Schema({
 
 export const SystemConfig = mongoose.models.SystemConfig || mongoose.model('SystemConfig', SystemConfigSchema);
 
+// Define Join Request Schema for Force Sub pending request tracking
+const JoinRequestSchema = new mongoose.Schema({
+  userId: { type: Number, required: true, index: true },
+  chatId: { type: Number, required: true, index: true },
+  status: { type: String, enum: ['pending', 'approved', 'declined'], default: 'pending' },
+  createdAt: { type: Date, default: Date.now }
+});
+JoinRequestSchema.index({ userId: 1, chatId: 1 }, { unique: true });
+
+export const JoinRequest = mongoose.models.JoinRequest || mongoose.model('JoinRequest', JoinRequestSchema);
+
+
 
