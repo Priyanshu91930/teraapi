@@ -51,6 +51,7 @@ export async function refreshNdusToken(whost) {
     if (loginRes.code === 0 && loginRes.data && loginRes.data.ndus) {
       const newNdus = loginRes.data.ndus;
       console.log('[NDUS Auto-Login] Success! New token generated.');
+      console.log('[NDUS Auto-Login] Token preview:', newNdus.substring(0, 20) + '...');
 
       // Save to MongoDB persistently
       try {
@@ -454,6 +455,7 @@ export default async function handler(req, res) {
             const freshToken = await refreshNdusToken(anonApp.params.whost);
             if (freshToken) {
               ndusToken = freshToken;
+              console.log('[Parse] Using fresh token for retry, preview:', freshToken.substring(0, 20) + '...');
               app = new TeraBoxApp(ndusToken);
               app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
               app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
