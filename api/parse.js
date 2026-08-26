@@ -144,7 +144,7 @@ async function resolveDlinkViaShareDownload(whost, sign, timestamp, shareId, uk,
         'Referer': `${whost}/sharing/link?surl=`,
         'Cookie': cookie || `browserid=${Math.random().toString(36).substring(2)}`,
       },
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(3000),
     });
     const j = await res.json();
     if (j && j.errno === 0 && j.dlink) {
@@ -506,6 +506,7 @@ export default async function handler(req, res) {
     try {
       const infoUrl = `${anonApp.params.whost}/api/shorturlinfo?shorturl=1${strippedShortUrl}&root=1`;
       const infoRes = await fetch(infoUrl, {
+        signal: AbortSignal.timeout(2000),
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Cookie': `browserid=${browserId}`,
@@ -558,6 +559,7 @@ export default async function handler(req, res) {
             // Use the shared streaming endpoint which is optimized for shared links and pass sign/timestamp verification signatures along with the browserid session cookie
             debugStreamEndpoint = `${app.params.whost}/share/streaming?app_id=250528&web=1&channel=dubian-wap&clienttype=0&path=${encodeURIComponent(file.path || '')}&fid=${file.fs_id || ''}&uk=${listData.uk}&shareid=${listData.share_id}&sign=${sign}&timestamp=${timestamp}&type=M3U8_AUTO_480&vip=2`;
             const sRes = await fetch(debugStreamEndpoint, {
+              signal: AbortSignal.timeout(3000),
               headers: {
                 'User-Agent': app.params.ua,
                 'Cookie': `ndus=${ndusToken}; browserid=${browserId}`,
@@ -595,6 +597,7 @@ export default async function handler(req, res) {
                 app.params.uhost = anonApp.params.uhost;
 
                 const retryRes = await fetch(debugStreamEndpoint, {
+                  signal: AbortSignal.timeout(3000),
                   headers: {
                     'User-Agent': app.params.ua,
                     'Cookie': `ndus=${ndusToken}; browserid=${browserId}`,
