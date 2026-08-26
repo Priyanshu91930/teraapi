@@ -674,6 +674,7 @@ await sendMessage(chatId, welcomeText, message.message_id);
     }
 
     // Force sub check for all non-command messages
+    const userIsAdmin = await isAdmin(userId);
     const includeGroups = isPrivateChat && !userIsAdmin;
     const check = await getMissingForceSubs(userId, includeGroups);
     if (!check.ok) {
@@ -730,7 +731,6 @@ await sendMessage(chatId, welcomeText, message.message_id);
 
     // Admin check: only admin can send links in private chat
     // Non-admin users must be in the group to get links
-    const userIsAdmin = await isAdmin(userId);
 
     const targetUrl = match[0];
 
