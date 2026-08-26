@@ -560,11 +560,56 @@ export default async function handler(req, res) {
         `• Facebook\n` +
         `• TikTok\n\n` +
         `<i>Just paste/send the link directly here!</i>`;
-      await sendMessage(chatId, welcomeText, message.message_id);
+await sendMessage(chatId, welcomeText, message.message_id);
       return res.status(200).send('OK');
-}
+    }
 
-// Force sub check for all non-command messages
+    // Debug command to check bot admin status in channels/groups
+    if (text === '/debuginfo') {
+      const token = process.env.TELEGRAM_BOT_TOKEN;
+      const channelIds = process.env.FORCE_SUB_CHANNEL_ID || '';
+      const groupIds = process.env.FORCE_SUB_GROUP_ID || '';
+      const channels = channelIds.split(',').map(id => id.trim()).filter(Boolean);
+      const groups = groupIds.split(',').map(id => id.trim()).filter(Boolean);
+      const allChats = [...channels, ...groups];
+      
+      let debugText = `🔍 <b>Bot Admin Status Check</b>\n\n`;
+      
+      for (const chatId of allChats) {
+        try {
+          const url = `https://api.telegram.org/bot${token}/getChatMember`;
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: chatId, user_id: (await fetch(`https://api.telegram.org/bot${token}/getMe`).then(r => r.json())).result.id })
+          });
+          const data = await response.json();
+          
+          if (data.ok) {
+            debugText += `✅ <code>${chatId}</code>: Bot is <b>${data.result.status}</b>\n`;
+            if (data.result.until_date) debugText += `   Until: ${new Date(data.result.until_date * 1000).toLocaleString()}\n`;
+          } else {
+            debugText += `❌ <code>${chatId}</code>: <b>${data.description}</b>\n`;
+            // Try without -100
+            const altId = chatId.startsWith('-100') ? chatId.substring(4) : `-100${chatId}`;
+            const altResp = await fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ chat_id: altId, user_id: (await fetch(`https://api.telegram.org/bot${token}/getMe`).then(r => r.json())).result.id })
+            });
+            const altData = await altResp.json();
+            if (altData.ok) debugText += `   ↳ Alt ID <code>${altId}</code>: <b>${altData.result.status}</b>\n`;
+          }
+        } catch (e) {
+          debugText += `⚠️ <code>${chatId}</code>: Error - ${e.message}\n`;
+        }
+      }
+      
+      await sendMessage(chatId, debugText, message.message_id);
+      return res.status(200).send('OK');
+    }
+
+    // Force sub check for all non-command messages
     const forceSub = await checkForceSub(userId);
     if (!forceSub.ok) {
       const inviteLinks = {};
