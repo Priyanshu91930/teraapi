@@ -703,6 +703,8 @@ export default async function handler(req, res) {
         thumbnail: file.thumbs?.url3 || file.thumbs?.url1 || '',
         dlink: dlink,
         stream_url: streamUrl,
+        // Mark file as unavailable if both download and stream failed
+        status: (!dlink && (!streamUrl || streamUrl.startsWith('ERROR:'))) ? 'unavailable' : 'ok',
         debug_sign: sign,
         debug_timestamp: timestamp,
         debug_stream_endpoint: debugStreamEndpoint,
