@@ -69,7 +69,8 @@ export default async function handler(req, res) {
   let referer = 'https://www.terabox.com/';
   try {
     const u = new URL(url);
-    if (u.hostname.includes('1024tera') || u.hostname.includes('terasharefile') || u.hostname.includes('teraboxlink')) {
+    const tbDomains = ['1024tera','1024terabox','terasharefile','terashare','nephobox','teraboxapp','tibbox','tibibox','freeterabox','teraboxlink','mirrobox','4funbox','terabox.fun','momerybox','terabox.app','terabox.ap'];
+    if (tbDomains.some(d => u.hostname.includes(d))) {
       referer = 'https://www.1024terabox.com/';
     }
   } catch {}
