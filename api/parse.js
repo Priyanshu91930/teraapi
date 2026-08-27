@@ -520,8 +520,19 @@ export default async function handler(req, res) {
     }
 
     if (!listData || listData.errno !== 0) {
-      const errCode = listData ? listData.errno : 'Unknown';
-      return res.status(400).json({ error: `TeraBox API returned error code ${errCode}. Please verify the URL or try again later.` });
+      let errMsg = "Failed to parse the link. Please verify the URL or try again later.";
+      if (listData) {
+        if (listData.errno === 140 || listData.errno === -140) {
+          errMsg = "This shared link has been deleted, expired, or cancelled by the owner.";
+        } else if (listData.errno === 105 || listData.errno === -6) {
+          errMsg = "Shared link not found or invalid. Please check the URL format.";
+        } else if (listData.errno === -9) {
+          errMsg = "This link requires a password. Password-protected links are currently not supported.";
+        } else {
+          errMsg = `TeraBox API returned error code ${listData.errno}. ${listData.errmsg || ''}`;
+        }
+      }
+      return res.status(400).json({ error: errMsg });
     }
 
     let ndusToken = await getNdusToken();
