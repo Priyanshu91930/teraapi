@@ -556,6 +556,14 @@ export default async function handler(req, res) {
           file.fs_id, sessionCookie
         );
         if (!dlink && ndusToken) {
+          console.log('[Parse] Premium dlink recovery failed with verification. Trying anonymous recovery...');
+          dlink = await resolveDlinkViaShareDownload(
+            anonApp.params.whost, sign, timestamp,
+            listData.share_id || listData.shareid, listData.uk,
+            file.fs_id, `browserid=${browserId}`
+          );
+        }
+        if (!dlink && ndusToken) {
           dlinkRecoveryFailed = true;
         }
       }
