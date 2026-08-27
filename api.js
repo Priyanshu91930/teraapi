@@ -529,19 +529,16 @@ class TeraBoxApp {
                 for(const cookie of req.headers['set-cookie']){
                     cJar.setCookieSync(cookie.split('; ')[0], this.params.whost);
                 }
-                // Preserve original login ndus cookie - /main must not overwrite it
-                if(this._loginCookies){
-                    const ndusCookie = this._loginCookies.split(';').find(c => c.trim().startsWith('ndus='));
-                    if(ndusCookie){
-                        // Remove old ndus from jar and add back the login one
-                        const freshCookies = cJar.getCookiesSync(this.params.whost).filter(c => c.key !== 'ndus');
-                        cJar.setCookieSync(ndusCookie.trim(), this.params.whost);
-                        this.params.cookie = cJar.getCookiesSync(this.params.whost).map(cookie => cookie.cookieString()).join('; ');
-                    } else {
-                        this.params.cookie = cJar.getCookiesSync(this.params.whost).map(cookie => cookie.cookieString()).join('; ');
-                    }
-                } else {
-                    this.params.cookie = cJar.getCookiesSync(this.params.whost).map(cookie => cookie.cookieString()).join('; ');
+                this.params.cookie = cJar.getCookiesSync(this.params.whost).map(cookie => cookie.cookieString()).join('; ');
+            }
+            
+            // After updateAppData, restore login ndus cookie if /main replaced it
+            if(this._loginCookies){
+                const loginNdus = this._loginCookies.split(';').find(c => c.trim().startsWith('ndus='))?.trim();
+                if(loginNdus){
+                    // Remove any ndus from current cookies and re-add the login one
+                    this.params.cookie = this.params.cookie.split(';').filter(c => !c.trim().startsWith('ndus=')).join('; ');
+                    this.params.cookie += '; ' + loginNdus;
                 }
             }
             
