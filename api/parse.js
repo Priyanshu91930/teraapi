@@ -473,6 +473,26 @@ export default async function handler(req, res) {
       }
     }
 
+    // Failsafe Fallback: If premium check failed, try resolving anonymously to fetch metadata
+    if (!listData || listData.errno !== 0) {
+      console.log('[Parse] Premium session failed. Attempting anonymous fallback...');
+      try {
+        const anonAppInstance = new TeraBoxApp("");
+        anonAppInstance.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+        anonAppInstance.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
+        anonAppInstance.params.whost = anonApp.params.whost;
+        anonAppInstance.params.uhost = anonApp.params.uhost;
+
+        const anonRes = await anonAppInstance.shortUrlList(strippedShortUrl);
+        console.log(`[Parse] Anonymous fallback response:`, JSON.stringify(anonRes));
+        if (anonRes && anonRes.errno === 0) {
+          listData = anonRes;
+        }
+      } catch (anonErr) {
+        console.error('[Parse] Anonymous fallback failed:', anonErr.message);
+      }
+    }
+
     // Trigger Telegram notification if token expiry is detected
     if (tokenExpiredDetected) {
       sendTelegramTokenAlert().catch(err => console.error('[Telegram] Alert failed:', err.message));
