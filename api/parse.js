@@ -442,11 +442,13 @@ export default async function handler(req, res) {
     if (true) {
       console.log(`[Parse] Resolving directly using logged-in NDUS session...`);
       let ndusToken = await getNdusToken();
+      let autoLoginAttempted = false; // Prevent multiple auto-login attempts per request
       // Bootstrap: no token anywhere (DB + env empty)? Try auto-login directly
       // so the system can self-start with just EMAIL/PASSWORD credentials.
       if (!ndusToken) {
         console.log('[Parse] No ndus token found in DB or env. Trying credential bootstrap...');
         ndusToken = await refreshNdusToken(anonApp.params.whost) || '';
+        autoLoginAttempted = true;
       }
       if (ndusToken) {
         let app = new TeraBoxApp(ndusToken);
@@ -460,19 +462,24 @@ export default async function handler(req, res) {
           console.log(`[Parse] NDUS session response:`, JSON.stringify(ndusData));
           
           if (ndusData && (ndusData.errno === 400141 || ndusData.errno === 105 || ndusData.errno === -6 || ndusData.errno === 108)) {
-            console.log('[Parse] NDUS token challenge/expiry detected. Attempting auto-login credentials refresh...');
-            const freshToken = await refreshNdusToken(anonApp.params.whost);
-            if (freshToken) {
-              ndusToken = freshToken;
-              console.log('[Parse] Using fresh token for retry, preview:', freshToken.substring(0, 20) + '...');
-              app = new TeraBoxApp(ndusToken);
-              app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-              app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
-              app.params.whost = anonApp.params.whost;
-              app.params.uhost = anonApp.params.uhost;
-              
-              ndusData = await app.shortUrlList(strippedShortUrl);
-              console.log(`[Parse] Retry NDUS session response:`, JSON.stringify(ndusData));
+            if (!autoLoginAttempted) {
+              console.log('[Parse] NDUS token challenge/expiry detected. Attempting auto-login credentials refresh...');
+              const freshToken = await refreshNdusToken(anonApp.params.whost);
+              autoLoginAttempted = true;
+              if (freshToken) {
+                ndusToken = freshToken;
+                console.log('[Parse] Using fresh token for retry, preview:', freshToken.substring(0, 20) + '...');
+                app = new TeraBoxApp(ndusToken);
+                app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+                app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
+                app.params.whost = anonApp.params.whost;
+                app.params.uhost = anonApp.params.uhost;
+                
+                ndusData = await app.shortUrlList(strippedShortUrl);
+                console.log(`[Parse] Retry NDUS session response:`, JSON.stringify(ndusData));
+              }
+            } else {
+              console.log('[Parse] Auto-login already attempted. Skipping duplicate refresh.');
             }
           }
 
@@ -630,10 +637,11 @@ export default async function handler(req, res) {
               }
             }
 
-            // If streaming returns need verify, refresh token and retry
-            if (streamData && streamData.errno === 400141) {
+            // If streaming returns need verify, refresh token and retry (only if not already attempted)
+            if (streamData && streamData.errno === 400141 && !autoLoginAttempted) {
               console.log('[Stream] share/streaming returned need verify. Refreshing token...');
               const freshToken = await refreshNdusToken(app.params.whost);
+              autoLoginAttempted = true;
               if (freshToken) {
                 ndusToken = freshToken;
                 app = new TeraBoxApp(ndusToken);
