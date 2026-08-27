@@ -41,7 +41,7 @@ except ImportError:
         sys.exit(1)
 
 # MongoDB Connection
-MONGODB_URI = os.getenv("MONGODB_URI", "mongodb+srv://anihubyt:Zxcvbnmm9193@cluster0.qv5tu12.mongodb.net/terabox_downloader?appName=Cluster0")
+MONGODB_URI = os.getenv("MONGODB_URI", "")
 
 try:
     client = MongoClient(MONGODB_URI)
