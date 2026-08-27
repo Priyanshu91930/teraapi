@@ -413,30 +413,14 @@ export default async function handler(req, res) {
     let tokenExpiredDetected = false;
     let dlinkRecoveryFailed = false;
 
-    // Map all mirrors directly to 1024tera.com to prevent cookie stripping redirects
-    const isMirror = cleanUrl.includes('1024tera') || 
-                     cleanUrl.includes('1024terabox') || 
-                     cleanUrl.includes('terasharefile') || 
-                     cleanUrl.includes('teraboxlink') || 
-                     cleanUrl.includes('mirrobox') || 
-                     cleanUrl.includes('nephobox') || 
-                     cleanUrl.includes('freeterabox') || 
-                     cleanUrl.includes('momerybox') || 
-                     cleanUrl.includes('tibibox') || 
-                     cleanUrl.includes('tibbox') || 
-                     cleanUrl.includes('4funbox') || 
-                     cleanUrl.includes('terabox.fun') || 
-                     cleanUrl.includes('terabox.app') || 
-                     cleanUrl.includes('terabox.ap');
-
-    // Dummy anonApp object to preserve compatibility with downstream parameters
+    // Always use 1024tera.com to prevent cookie stripping redirects on Vercel
     const anonApp = {
       params: {
-        whost: isMirror ? 'https://www.1024tera.com' : 'https://www.terabox.com',
-        uhost: isMirror ? 'https://c-all.1024tera.com' : 'https://c-all.terabox.com',
+        whost: 'https://www.1024tera.com',
+        uhost: 'https://c-all.1024tera.com',
         ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       },
-      TERABOX_DOMAIN: isMirror ? '1024tera.com' : 'terabox.com'
+      TERABOX_DOMAIN: '1024tera.com'
     };
 
     // 2. Resolve directly using logged-in NDUS session

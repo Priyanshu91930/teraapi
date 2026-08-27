@@ -229,28 +229,12 @@ app.get('/parse', async (req, res) => {
     // Always strip the leading '1' from the shortUrl because the /share/list API expects the raw surl token
     const strippedShortUrl = shortUrl.replace(/^1/, '');
 
-    // Map all mirrors directly to 1024tera.com to prevent cookie stripping redirects
-    const isMirror = cleanUrl.includes('1024tera') || 
-                     cleanUrl.includes('1024terabox') || 
-                     cleanUrl.includes('terasharefile') || 
-                     cleanUrl.includes('teraboxlink') || 
-                     cleanUrl.includes('mirrobox') || 
-                     cleanUrl.includes('nephobox') || 
-                     cleanUrl.includes('freeterabox') || 
-                     cleanUrl.includes('momerybox') || 
-                     cleanUrl.includes('tibibox') || 
-                     cleanUrl.includes('tibbox') || 
-                     cleanUrl.includes('4funbox') || 
-                     cleanUrl.includes('terabox.fun') || 
-                     cleanUrl.includes('terabox.app') || 
-                     cleanUrl.includes('terabox.ap');
-
-    // 1. Try resolving anonymously first to avoid regional cluster redirects (like dm.1024tera.com)
+    // Always use 1024tera.com to prevent cookie stripping redirects on Vercel
     const anonApp = new TeraBoxApp("");
     anonApp.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-    anonApp.TERABOX_DOMAIN = isMirror ? '1024tera.com' : 'terabox.com';
-    anonApp.params.whost = `https://www.${anonApp.TERABOX_DOMAIN}`;
-    anonApp.params.uhost = `https://c-all.${anonApp.TERABOX_DOMAIN}`;
+    anonApp.TERABOX_DOMAIN = '1024tera.com';
+    anonApp.params.whost = 'https://www.1024tera.com';
+    anonApp.params.uhost = 'https://c-all.1024tera.com';
 
     let listData;
     try {
