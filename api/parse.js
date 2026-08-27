@@ -41,7 +41,7 @@ export async function refreshNdusToken(whost) {
   try {
     const app = new TeraBoxApp('');
     app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-    app.TERABOX_DOMAIN = whost.includes('1024tera') || whost.includes('1024terabox') || whost.includes('terasharefile') ? '1024tera.com' : 'terabox.com';
+    app.TERABOX_DOMAIN = whost.includes('1024tera') || whost.includes('1024terabox') || whost.includes('terasharefile') ? '1024terabox.com' : 'terabox.com';
     app.params.whost = whost;
     app.params.uhost = whost;
 
@@ -413,14 +413,14 @@ export default async function handler(req, res) {
     let tokenExpiredDetected = false;
     let dlinkRecoveryFailed = false;
 
-    // Always use 1024tera.com to prevent cookie stripping redirects on Vercel
+    // Always use 1024terabox.com to prevent cookie stripping redirects on Vercel
     const anonApp = {
       params: {
-        whost: 'https://www.1024tera.com',
-        uhost: 'https://c-all.1024tera.com',
+        whost: 'https://www.1024terabox.com',
+        uhost: 'https://c-all.1024terabox.com',
         ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       },
-      TERABOX_DOMAIN: '1024tera.com'
+      TERABOX_DOMAIN: '1024terabox.com'
     };
 
     // 2. Resolve directly using logged-in NDUS session

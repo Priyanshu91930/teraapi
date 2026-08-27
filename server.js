@@ -229,12 +229,12 @@ app.get('/parse', async (req, res) => {
     // Always strip the leading '1' from the shortUrl because the /share/list API expects the raw surl token
     const strippedShortUrl = shortUrl.replace(/^1/, '');
 
-    // Always use 1024tera.com to prevent cookie stripping redirects on Vercel
+    // Always use 1024terabox.com to prevent cookie stripping redirects on Vercel
     const anonApp = new TeraBoxApp("");
     anonApp.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-    anonApp.TERABOX_DOMAIN = '1024tera.com';
-    anonApp.params.whost = 'https://www.1024tera.com';
-    anonApp.params.uhost = 'https://c-all.1024tera.com';
+    anonApp.TERABOX_DOMAIN = '1024terabox.com';
+    anonApp.params.whost = 'https://www.1024terabox.com';
+    anonApp.params.uhost = 'https://c-all.1024terabox.com';
 
     let listData;
     try {
