@@ -41,7 +41,7 @@ export async function refreshNdusToken(whost) {
   try {
     const app = new TeraBoxApp('');
     app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-    app.TERABOX_DOMAIN = whost.includes('1024tera.com') ? '1024tera.com' : 'terabox.com';
+    app.TERABOX_DOMAIN = whost.includes('1024tera') || whost.includes('1024terabox') || whost.includes('terasharefile') ? '1024tera.com' : 'terabox.com';
     app.params.whost = whost;
     app.params.uhost = whost;
 
@@ -413,20 +413,30 @@ export default async function handler(req, res) {
     let tokenExpiredDetected = false;
     let dlinkRecoveryFailed = false;
 
+    // Map all mirrors directly to 1024tera.com to prevent cookie stripping redirects
+    const isMirror = cleanUrl.includes('1024tera') || 
+                     cleanUrl.includes('1024terabox') || 
+                     cleanUrl.includes('terasharefile') || 
+                     cleanUrl.includes('teraboxlink') || 
+                     cleanUrl.includes('mirrobox') || 
+                     cleanUrl.includes('nephobox') || 
+                     cleanUrl.includes('freeterabox') || 
+                     cleanUrl.includes('momerybox') || 
+                     cleanUrl.includes('tibibox') || 
+                     cleanUrl.includes('tibbox') || 
+                     cleanUrl.includes('4funbox') || 
+                     cleanUrl.includes('terabox.fun') || 
+                     cleanUrl.includes('terabox.app') || 
+                     cleanUrl.includes('terabox.ap');
+
     // Dummy anonApp object to preserve compatibility with downstream parameters
     const anonApp = {
       params: {
-        whost: cleanUrl.includes('1024tera') || cleanUrl.includes('1024terabox') || cleanUrl.includes('terasharefile')
-          ? 'https://www.1024tera.com'
-          : 'https://www.terabox.com',
-        uhost: cleanUrl.includes('1024tera') || cleanUrl.includes('1024terabox') || cleanUrl.includes('terasharefile')
-          ? 'https://c-all.1024tera.com'
-          : 'https://c-all.terabox.com',
+        whost: isMirror ? 'https://www.1024tera.com' : 'https://www.terabox.com',
+        uhost: isMirror ? 'https://c-all.1024tera.com' : 'https://c-all.terabox.com',
         ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       },
-      TERABOX_DOMAIN: cleanUrl.includes('1024tera') || cleanUrl.includes('1024terabox') || cleanUrl.includes('terasharefile')
-        ? '1024tera.com'
-        : 'terabox.com'
+      TERABOX_DOMAIN: isMirror ? '1024tera.com' : 'terabox.com'
     };
 
     // 2. Resolve directly using logged-in NDUS session
