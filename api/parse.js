@@ -41,7 +41,7 @@ export async function refreshNdusToken(whost) {
   try {
     const app = new TeraBoxApp('');
     app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-    app.TERABOX_DOMAIN = whost.includes('1024tera') || whost.includes('1024terabox') || whost.includes('terasharefile') ? '1024terabox.com' : 'terabox.com';
+    app.TERABOX_DOMAIN = whost.includes('1024tera') || whost.includes('1024terabox') || whost.includes('terasharefile') || whost.includes('teraboxlink') ? '1024terabox.com' : 'terabox.com';
     app.params.whost = whost;
     app.params.uhost = whost;
 
@@ -699,7 +699,7 @@ export default async function handler(req, res) {
         'Cookie': ndusToken ? `ndus=${ndusToken}` : '',
         'Accept': '*/*',
         'Connection': 'keep-alive',
-        'Referer': 'https://www.terabox.com/',
+        'Referer': `https://www.${anonApp.TERABOX_DOMAIN}/`,
       }
     });
   } catch (error) {

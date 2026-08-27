@@ -65,10 +65,19 @@ export default async function handler(req, res) {
   }
 
   const ndusToken = await getNdusToken();
+  // Determine referer from the upstream URL domain
+  let referer = 'https://www.terabox.com/';
+  try {
+    const u = new URL(url);
+    if (u.hostname.includes('1024tera') || u.hostname.includes('terasharefile') || u.hostname.includes('teraboxlink')) {
+      referer = 'https://www.1024terabox.com/';
+    }
+  } catch {}
+  
   const headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Accept': '*/*',
-    'Referer': 'https://www.terabox.com/',
+    'Referer': referer,
   };
   if (ndusToken) headers['Cookie'] = `ndus=${ndusToken}`;
 
