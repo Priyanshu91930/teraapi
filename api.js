@@ -476,6 +476,7 @@ class TeraBoxApp {
             // If authData contains '=', it's a full cookie string; otherwise just ndus value
             if(authData && authData.includes('=')){
                 this.params.cookie += '; ' + authData;
+                this._loginCookies = authData; // Preserve original login cookies
             } else {
                 this.params.cookie += authData ? '; ndus=' + authData : '';
             }
@@ -528,7 +529,20 @@ class TeraBoxApp {
                 for(const cookie of req.headers['set-cookie']){
                     cJar.setCookieSync(cookie.split('; ')[0], this.params.whost);
                 }
-                this.params.cookie = cJar.getCookiesSync(this.params.whost).map(cookie => cookie.cookieString()).join('; ');
+                // Preserve original login ndus cookie - /main must not overwrite it
+                if(this._loginCookies){
+                    const ndusCookie = this._loginCookies.split(';').find(c => c.trim().startsWith('ndus='));
+                    if(ndusCookie){
+                        // Remove old ndus from jar and add back the login one
+                        const freshCookies = cJar.getCookiesSync(this.params.whost).filter(c => c.key !== 'ndus');
+                        cJar.setCookieSync(ndusCookie.trim(), this.params.whost);
+                        this.params.cookie = cJar.getCookiesSync(this.params.whost).map(cookie => cookie.cookieString()).join('; ');
+                    } else {
+                        this.params.cookie = cJar.getCookiesSync(this.params.whost).map(cookie => cookie.cookieString()).join('; ');
+                    }
+                } else {
+                    this.params.cookie = cJar.getCookiesSync(this.params.whost).map(cookie => cookie.cookieString()).join('; ');
+                }
             }
             
             const rdata = await req.body.text();
@@ -848,9 +862,13 @@ class TeraBoxApp {
                 for(const cookie of req.headers['set-cookie']){
                     cJar.setCookieSync(cookie.split('; ')[0], this.params.whost);
                 }
-                const ndus = cJar.toJSON().cookies.find(c => c.key === 'ndus')?.value || '';
+                const ndus = cJar.toJSON().cookies.find(c => c.key === 'ndus')?.value || rdata.data?.ndus || '';
                 // Return ALL cookies from login session (ndus + browserid + csrf + etc)
-                const allCookies = cJar.toJSON().cookies.map(c => `${c.key}=${c.value}`).join('; ');
+                // ndus comes from JSON response body, NOT Set-Cookie - must add manually
+                let allCookies = cJar.toJSON().cookies.map(c => `${c.key}=${c.value}`).join('; ');
+                if (ndus && !allCookies.includes('ndus=')) {
+                    allCookies = allCookies ? `ndus=${ndus}; ${allCookies}` : `ndus=${ndus}`;
+                }
                 rdata.data.ndus = ndus;
                 rdata.data.cookies = allCookies;
             }
