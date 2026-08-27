@@ -27,11 +27,10 @@ async function run() {
     const infoData = await infoRes.json();
     console.log('Current Webhook Info:', JSON.stringify(infoData, null, 2));
 
-    const currentUrl = infoData.result?.url;
+    let currentUrl = infoData.result?.url;
     if (!currentUrl) {
-      console.error('Error: No webhook URL is currently set on Telegram for this bot token.');
-      console.log('Please set a webhook first or provide it manually.');
-      process.exit(1);
+      console.log('No current webhook URL found. Defaulting to production Vercel Bot URL...');
+      currentUrl = 'https://teraapi-seven.vercel.app/bot';
     }
 
     // 2. Set webhook with allowed_updates

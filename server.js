@@ -232,7 +232,7 @@ app.get('/parse', async (req, res) => {
     // 1. Try resolving anonymously first to avoid regional cluster redirects (like dm.1024tera.com)
     const anonApp = new TeraBoxApp("");
     anonApp.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-    anonApp.TERABOX_DOMAIN = cleanUrl.includes('1024tera.com') || cleanUrl.includes('1024terabox.com') || cleanUrl.includes('terasharefile.com')
+    anonApp.TERABOX_DOMAIN = cleanUrl.includes('1024tera') || cleanUrl.includes('1024terabox') || cleanUrl.includes('terasharefile')
       ? '1024tera.com'
       : 'terabox.com';
     anonApp.params.whost = `https://www.${anonApp.TERABOX_DOMAIN}`;
