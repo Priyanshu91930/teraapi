@@ -80,7 +80,7 @@ export default async function handler(req, res) {
     'Accept': '*/*',
     'Referer': referer,
   };
-  if (ndusToken) headers['Cookie'] = `ndus=${ndusToken}`;
+  if (ndusToken) headers['Cookie'] = ndusToken.includes('=') ? ndusToken : `ndus=${ndusToken}`;
 
   const range = req.headers['range'];
   if (range) headers['Range'] = range;

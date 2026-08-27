@@ -12,6 +12,18 @@ function formatBytes(bytes, decimals = 2) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
+// Helper: build cookie string from ndus token and optional browserId
+function buildCookie(ndusToken, browserId) {
+  if (ndusToken && ndusToken.includes('=')) {
+    // Already a full cookie string
+    return ndusToken;
+  }
+  // Legacy: just ndus value
+  let cookie = ndusToken ? `ndus=${ndusToken}` : '';
+  if (browserId) cookie += `; browserid=${browserId}`;
+  return cookie;
+}
+
 // Function to get the current ndus token (either from MongoDB, or falling back to process.env)
 async function getNdusToken() {
   try {
@@ -50,22 +62,24 @@ export async function refreshNdusToken(whost) {
     const loginRes = await app.passportLogin(preLoginData, email, password);
 
     if (loginRes.code === 0 && loginRes.data && loginRes.data.ndus) {
+      // Use FULL cookie string from login (ndus + browserid + csrf + all session cookies)
+      const fullCookies = loginRes.data.cookies || `ndus=${loginRes.data.ndus}`;
       const newNdus = loginRes.data.ndus;
       console.log('[NDUS Auto-Login] Success! New token generated.');
-      console.log('[NDUS Auto-Login] Token preview:', newNdus.substring(0, 20) + '...');
+      console.log('[NDUS Auto-Login] Full cookies preview:', fullCookies.substring(0, 60) + '...');
 
-      // Save to MongoDB persistently
+      // Save full cookie string to MongoDB persistently
       try {
         await SystemConfig.findOneAndUpdate(
           { key: 'TERABOX_NDUS' },
-          { value: newNdus, updatedAt: new Date() },
+          { value: fullCookies, updatedAt: new Date() },
           { upsert: true }
         );
-        console.log('[NDUS Auto-Login] Saved new token to MongoDB configuration cache.');
+        console.log('[NDUS Auto-Login] Saved full cookies to MongoDB configuration cache.');
       } catch (dbErr) {
-        console.error('[NDUS Auto-Login] Failed to save new token to MongoDB:', dbErr.message);
+        console.error('[NDUS Auto-Login] Failed to save to MongoDB:', dbErr.message);
       }
-      return newNdus;
+      return fullCookies;
     } else {
       console.error('[NDUS Auto-Login] Failed. Response:', JSON.stringify(loginRes));
     }
@@ -548,9 +562,7 @@ export default async function handler(req, res) {
       // (share/list no longer returns dlink for many sessions)
       let dlink = file.dlink || '';
       if (!dlink && sign && timestamp && listData.share_id && listData.uk && file.fs_id) {
-        const sessionCookie = ndusToken
-          ? `ndus=${ndusToken}; browserid=${browserId}`
-          : `browserid=${browserId}`;
+        const sessionCookie = buildCookie(ndusToken, browserId);
         dlink = await resolveDlinkViaShareDownload(
           anonApp.params.whost, sign, timestamp,
           listData.share_id || listData.shareid, listData.uk,
@@ -585,7 +597,7 @@ export default async function handler(req, res) {
               signal: AbortSignal.timeout(3000),
               headers: {
                 'User-Agent': app.params.ua,
-                'Cookie': `ndus=${ndusToken}; browserid=${browserId}`,
+                'Cookie': buildCookie(ndusToken, browserId),
                 'Referer': `https://www.${app.TERABOX_DOMAIN}/`
               }
             });
@@ -623,7 +635,7 @@ export default async function handler(req, res) {
                   signal: AbortSignal.timeout(3000),
                   headers: {
                     'User-Agent': app.params.ua,
-                    'Cookie': `ndus=${ndusToken}; browserid=${browserId}`,
+                    'Cookie': buildCookie(ndusToken, browserId),
                     'Referer': `https://www.${app.TERABOX_DOMAIN}/`
                   }
                 });
@@ -697,7 +709,7 @@ export default async function handler(req, res) {
       first_file_name: (listData && listData.list && listData.list[0]) ? listData.list[0].name : null,
       downloadHeaders: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Cookie': ndusToken ? `ndus=${ndusToken}` : '',
+        'Cookie': buildCookie(ndusToken),
         'Accept': '*/*',
         'Connection': 'keep-alive',
         'Referer': `https://www.${anonApp.TERABOX_DOMAIN}/`,

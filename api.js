@@ -473,7 +473,12 @@ class TeraBoxApp {
     constructor(authData, authType = 'ndus') {
         this.params.cookie = `lang=${this.params.lang}`;
         if(authType === 'ndus'){
-            this.params.cookie += authData ? '; ndus=' + authData : '';
+            // If authData contains '=', it's a full cookie string; otherwise just ndus value
+            if(authData && authData.includes('=')){
+                this.params.cookie += '; ' + authData;
+            } else {
+                this.params.cookie += authData ? '; ndus=' + authData : '';
+            }
         }
         else{
             throw new Error('initTBApp', { cause: 'AuthType Not Supported!' });
@@ -843,8 +848,11 @@ class TeraBoxApp {
                 for(const cookie of req.headers['set-cookie']){
                     cJar.setCookieSync(cookie.split('; ')[0], this.params.whost);
                 }
-                const ndus = cJar.toJSON().cookies.find(c => c.key === 'ndus').value;
+                const ndus = cJar.toJSON().cookies.find(c => c.key === 'ndus')?.value || '';
+                // Return ALL cookies from login session (ndus + browserid + csrf + etc)
+                const allCookies = cJar.toJSON().cookies.map(c => `${c.key}=${c.value}`).join('; ');
                 rdata.data.ndus = ndus;
+                rdata.data.cookies = allCookies;
             }
             return rdata;
         }
