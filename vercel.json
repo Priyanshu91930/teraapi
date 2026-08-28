@@ -3,10 +3,6 @@
   "regions": ["bom1"],
   "builds": [
     {
-      "src": "api/bot.js",
-      "use": "@vercel/node"
-    },
-    {
       "src": "api/parse.js",
       "use": "@vercel/node"
     },
@@ -52,15 +48,6 @@
     }
   ],
   "routes": [
-    {
-      "src": "/bot",
-      "dest": "/api/bot.js",
-      "headers": {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type"
-      }
-    },
     {
       "src": "/parse",
       "dest": "/api/parse.js",
