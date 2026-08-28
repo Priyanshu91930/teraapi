@@ -3,15 +3,24 @@ import { connectToDatabase, SystemConfig } from '../db.js';
 
 export const config = { maxDuration: 60 };
 
-// Token lookup order: MongoDB cache first (auto-login refreshes this in
-// realtime), then Vercel env as bootstrap/fallback.
+// In-memory cache to avoid MongoDB call on every chunk request
+let cachedToken = null;
+let cacheTime = 0;
+const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
 async function getNdusToken() {
+  const now = Date.now();
+  if (cachedToken && (now - cacheTime) < CACHE_TTL) {
+    return cachedToken;
+  }
   try {
     await connectToDatabase();
     const config = await SystemConfig.findOne({ key: 'TERABOX_NDUS' });
     if (config && config.value) {
+      cachedToken = config.value;
+      cacheTime = now;
       console.log('[NDUS] Retrieved token from MongoDB config cache.');
-      return config.value;
+      return cachedToken;
     }
   } catch (err) {
     console.error('[NDUS Cache] Failed to fetch from DB:', err.message);
