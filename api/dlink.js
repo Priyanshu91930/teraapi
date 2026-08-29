@@ -60,10 +60,15 @@ export default async function handler(req, res) {
         signal: AbortSignal.timeout(3000),
         headers: { 'User-Agent': TB_UA, 'Cookie': buildCookie(ndusToken, browserId) }
       });
-      const infoData = await infoRes.json();
-      if (infoData && infoData.errno === 0) {
-        sign = infoData.sign || '';
-        timestamp = infoData.timestamp || '';
+      const infoContentType = infoRes.headers.get('content-type') || '';
+      if (infoContentType.includes('json')) {
+        const infoData = await infoRes.json();
+        if (infoData && infoData.errno === 0) {
+          sign = infoData.sign || '';
+          timestamp = infoData.timestamp || '';
+        }
+      } else {
+        console.error('[dlink] shareinfo returned non-JSON response');
       }
     } catch (e) {
       console.error('[dlink] shareinfo error:', e.message);
@@ -90,6 +95,10 @@ export default async function handler(req, res) {
       },
       signal: AbortSignal.timeout(5000),
     });
+    const dlContentType = dlRes.headers.get('content-type') || '';
+    if (!dlContentType.includes('json')) {
+      return res.status(200).json({ dlink: '', error: 'TeraBox returned non-JSON (rate limited or blocked)' });
+    }
     const dlData = await dlRes.json();
     console.log('[dlink] share/download response:', JSON.stringify(dlData));
 
