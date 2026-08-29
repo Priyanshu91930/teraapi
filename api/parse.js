@@ -641,12 +641,17 @@ export default async function handler(req, res) {
 
       // For folder-expanded files, skip heavy dlink/stream resolution to avoid timeout
       if (isFolderExpanded) {
+        // TeraBox returns thumbs as object {icon_url, url1, url2} or plain thumbnail field
+        const thumbObj = file.thumbs || {};
+        const thumb = thumbObj.url1 || thumbObj.url2 || thumbObj.icon_url || file.thumbnail || '';
+        const ext = file.server_filename?.split('.').pop()?.toLowerCase();
+        const isVid = ['mp4', 'webm', 'ogg', 'mkv', 'mov', 'avi', 'ts', 'wmv', '3gp', 'flv'].includes(ext);
         return {
           name: file.server_filename || 'Unknown',
           size: formatBytes(Number(file.size) || 0),
-          thumbnail: '',
+          thumbnail: thumb,
           dlink: '',
-          stream_url: '',
+          stream_url: isVid ? 'FOLDER_VIDEO' : '',
           status: 'folder_file',
           fs_id: file.fs_id,
           path: file.path,
