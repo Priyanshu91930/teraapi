@@ -45,6 +45,10 @@
     {
       "src": "api/auth/me.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "api/dlink.js",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
@@ -55,6 +59,15 @@
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type"
+      }
+    },
+    {
+      "src": "/dlink",
+      "dest": "/api/dlink.js",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, x-api-key"
       }
     },
     {
