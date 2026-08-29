@@ -255,6 +255,7 @@ export default async function handler(req, res) {
   }
 
   const cleanUrl = url.trim().replace(/[\s\r\n\t]/g, '');
+  console.log(`[Parse] Request URL: ${cleanUrl}`);
 
   try {
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
