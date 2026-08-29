@@ -194,7 +194,7 @@ async function fetchFolderFiles(app, shortUrl, dirPath, shareId, uk, browserId, 
     const res = await fetch(listUrl, {
       headers: {
         'User-Agent': app.params.ua,
-        'Cookie': `browserid=${browserId}; ndus=${ndusToken}`,
+        'Cookie': buildCookie(ndusToken, browserId),
         'Referer': `${app.params.whost}/`
       },
       signal: AbortSignal.timeout(3000),
@@ -203,7 +203,7 @@ async function fetchFolderFiles(app, shortUrl, dirPath, shareId, uk, browserId, 
     if (j && j.errno === 0 && Array.isArray(j.list)) {
       let files = [];
       for (const item of j.list) {
-        if (item.isdir === 1) {
+        if (Number(item.isdir) === 1) {
           const subFiles = await fetchFolderFiles(app, shortUrl, item.path, shareId, uk, browserId, ndusToken);
           files = files.concat(subFiles);
         } else {
@@ -620,7 +620,7 @@ export default async function handler(req, res) {
     let flattenedList = [];
     if (listData && Array.isArray(listData.list)) {
       for (const file of listData.list) {
-        if (file.isdir === 1) {
+        if (Number(file.isdir) === 1) {
           console.log(`[Parse] Found directory: ${file.server_filename}. Fetching contents...`);
           const folderFiles = await fetchFolderFiles(
             anonApp, `1${strippedShortUrl}`, file.path,
