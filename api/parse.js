@@ -626,8 +626,11 @@ export default async function handler(req, res) {
         );
         listData.list = topFiles.concat(...dirResults);
         console.log(`[Parse] Total files after folder expansion: ${listData.list.length}`);
+        listData._isFolderExpanded = true; // Flag to skip heavy per-file processing
       }
     }
+
+    const isFolderExpanded = !!listData._isFolderExpanded;
 
     const formattedList = await Promise.all((listData.list || []).map(async (file) => {
       const ext = file.server_filename?.split('.').pop()?.toLowerCase();
@@ -635,6 +638,20 @@ export default async function handler(req, res) {
       let streamUrl = '';
       let debugStreamEndpoint = '';
       let debugStreamData = null;
+
+      // For folder-expanded files, skip heavy dlink/stream resolution to avoid timeout
+      if (isFolderExpanded) {
+        return {
+          name: file.server_filename || 'Unknown',
+          size: formatBytes(Number(file.size) || 0),
+          thumbnail: '',
+          dlink: '',
+          stream_url: '',
+          status: 'folder_file',
+          fs_id: file.fs_id,
+          path: file.path,
+        };
+      }
 
       // Recover missing dlink via the signed /share/download endpoint
       // (share/list no longer returns dlink for many sessions)
