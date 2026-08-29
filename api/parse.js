@@ -189,7 +189,7 @@ async function fetchFolderFiles(app, shortUrl, dirPath, shareId, uk, browserId, 
       shareid: String(shareId),
       uk: String(uk),
       root: '0',
-    });
+    }).toString().replace(/\+/g, '%20');
 
     const res = await fetch(listUrl, {
       headers: {
@@ -200,6 +200,7 @@ async function fetchFolderFiles(app, shortUrl, dirPath, shareId, uk, browserId, 
       signal: AbortSignal.timeout(3000),
     });
     const j = await res.json();
+    console.log(`[Folder Fetch] Response for ${dirPath}:`, JSON.stringify(j));
     if (j && j.errno === 0 && Array.isArray(j.list)) {
       let files = [];
       for (const item of j.list) {
