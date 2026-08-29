@@ -173,6 +173,8 @@ async function resolveDlinkViaShareDownload(whost, sign, timestamp, shareId, uk,
     console.log('[Parse] /share/download fallback error:', e.message);
     return '';
   }
+}
+
 // Helper to recursively fetch all files inside a directory (folder) in a TeraBox share link
 async function fetchFolderFiles(app, shortUrl, dirPath, shareId, uk, browserId, ndusToken) {
   try {
