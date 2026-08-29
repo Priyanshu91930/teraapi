@@ -177,24 +177,26 @@ async function resolveDlinkViaShareDownload(whost, sign, timestamp, shareId, uk,
 
 // Helper to recursively fetch all files inside a directory (folder) in a TeraBox share link
 // Uses the TeraBoxApp's shortUrlList method with undici TLS connector to bypass Cloudflare
-async function fetchFolderFiles(app, shortUrl, dirPath, shareId, uk, browserId, ndusToken) {
+async function fetchFolderFiles(app, shortUrl, dirPath, shareId, uk, browserId, ndusToken, depth = 0) {
+  if (depth > 2) {
+    console.warn(`[Folder Fetch] Max depth reached at: ${dirPath}`);
+    return [];
+  }
   try {
-    console.log(`[Folder Fetch] Listing dir: ${dirPath} via app.shortUrlList`);
-    // Strip leading '1' from shortUrl if present (API expects raw surl)
+    console.log(`[Folder Fetch] Listing dir (depth=${depth}): ${dirPath}`);
     const rawShortUrl = shortUrl.replace(/^1/, '');
     const j = await app.shortUrlList(rawShortUrl, dirPath);
-    console.log(`[Folder Fetch] Response for ${dirPath}: errno=${j && j.errno}`);
+    console.log(`[Folder Fetch] Response for ${dirPath}: errno=${j && j.errno}, count=${j && j.list && j.list.length}`);
     if (j && j.errno === 0 && Array.isArray(j.list)) {
-      let files = [];
-      for (const item of j.list) {
-        if (Number(item.isdir) === 1) {
-          const subFiles = await fetchFolderFiles(app, shortUrl, item.path, shareId, uk, browserId, ndusToken);
-          files = files.concat(subFiles);
-        } else {
-          files.push(item);
-        }
-      }
-      return files;
+      // Separate dirs and files
+      const dirs = j.list.filter(item => Number(item.isdir) === 1);
+      const files = j.list.filter(item => Number(item.isdir) !== 1);
+
+      // Fetch all subdirs in parallel
+      const subResults = await Promise.all(
+        dirs.map(dir => fetchFolderFiles(app, shortUrl, dir.path, shareId, uk, browserId, ndusToken, depth + 1))
+      );
+      return files.concat(...subResults);
     }
     console.warn(`[Folder Fetch] errno=${j && j.errno} errmsg=${j && j.errmsg} for dir ${dirPath}`);
     return [];
@@ -203,6 +205,7 @@ async function fetchFolderFiles(app, shortUrl, dirPath, shareId, uk, browserId, 
     return [];
   }
 }
+
 
 
 export default async function handler(req, res) {
@@ -604,23 +607,26 @@ export default async function handler(req, res) {
       console.error('[Parse] Failed to fetch shortUrlInfo metadata:', infoErr.message);
     }
 
-    // If any items are directories (folders), recursively fetch files inside them
-    let flattenedList = [];
+    // If any items are directories (folders), recursively fetch files inside them (parallel)
     if (listData && Array.isArray(listData.list)) {
-      for (const file of listData.list) {
-        if (Number(file.isdir) === 1) {
-          console.log(`[Parse] Found directory: ${file.server_filename}. Fetching contents...`);
-          const folderFiles = await fetchFolderFiles(
-            premiumApp || anonApp, `1${strippedShortUrl}`, file.path,
-            listData.share_id || listData.shareid, listData.uk,
-            browserId, ndusToken
-          );
-          flattenedList = flattenedList.concat(folderFiles);
-        } else {
-          flattenedList.push(file);
-        }
+      const topDirs = listData.list.filter(f => Number(f.isdir) === 1);
+      const topFiles = listData.list.filter(f => Number(f.isdir) !== 1);
+
+      if (topDirs.length > 0) {
+        console.log(`[Parse] Found ${topDirs.length} top-level director(ies). Fetching in parallel...`);
+        const dirResults = await Promise.all(
+          topDirs.map(dir => {
+            console.log(`[Parse] Fetching dir: ${dir.server_filename}`);
+            return fetchFolderFiles(
+              premiumApp || anonApp, `1${strippedShortUrl}`, dir.path,
+              listData.share_id || listData.shareid, listData.uk,
+              browserId, ndusToken, 0
+            );
+          })
+        );
+        listData.list = topFiles.concat(...dirResults);
+        console.log(`[Parse] Total files after folder expansion: ${listData.list.length}`);
       }
-      listData.list = flattenedList;
     }
 
     const formattedList = await Promise.all((listData.list || []).map(async (file) => {
