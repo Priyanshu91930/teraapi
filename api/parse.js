@@ -536,7 +536,7 @@ export default async function handler(req, res) {
           errMsg = "You're late! The shared files have been deleted or expired.";
         } else if (listData.errno === 105 || listData.errno === -6) {
           errMsg = "Shared link not found or invalid. Please check the URL format.";
-        } else if (listData.errno === -9) {
+        } else if (listData.errno === -9 || listData.errno === 2130 || listData.errno === -2130) {
           errMsg = "This link requires a password. Password-protected links are currently not supported.";
         } else {
           errMsg = `TeraBox API returned error code ${listData.errno}. ${listData.errmsg || ''}`;
