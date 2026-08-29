@@ -176,31 +176,14 @@ async function resolveDlinkViaShareDownload(whost, sign, timestamp, shareId, uk,
 }
 
 // Helper to recursively fetch all files inside a directory (folder) in a TeraBox share link
+// Uses the TeraBoxApp's shortUrlList method with undici TLS connector to bypass Cloudflare
 async function fetchFolderFiles(app, shortUrl, dirPath, shareId, uk, browserId, ndusToken) {
   try {
-    const listUrl = new URL(`${app.params.whost}/share/list`);
-    listUrl.search = new URLSearchParams({
-      app_id: '250528',
-      web: '1',
-      channel: 'dubian-wap',
-      clienttype: '0',
-      shorturl: shortUrl,
-      dir: dirPath,
-      shareid: String(shareId),
-      uk: String(uk),
-      root: '0',
-    }).toString().replace(/\+/g, '%20');
-
-    const res = await fetch(listUrl, {
-      headers: {
-        'User-Agent': app.params.ua,
-        'Cookie': buildCookie(ndusToken, browserId),
-        'Referer': `${app.params.whost}/`
-      },
-      signal: AbortSignal.timeout(3000),
-    });
-    const j = await res.json();
-    console.log(`[Folder Fetch] Response for ${dirPath}:`, JSON.stringify(j));
+    console.log(`[Folder Fetch] Listing dir: ${dirPath} via app.shortUrlList`);
+    // Strip leading '1' from shortUrl if present (API expects raw surl)
+    const rawShortUrl = shortUrl.replace(/^1/, '');
+    const j = await app.shortUrlList(rawShortUrl, dirPath);
+    console.log(`[Folder Fetch] Response for ${dirPath}: errno=${j && j.errno}`);
     if (j && j.errno === 0 && Array.isArray(j.list)) {
       let files = [];
       for (const item of j.list) {
@@ -213,12 +196,14 @@ async function fetchFolderFiles(app, shortUrl, dirPath, shareId, uk, browserId, 
       }
       return files;
     }
+    console.warn(`[Folder Fetch] errno=${j && j.errno} errmsg=${j && j.errmsg} for dir ${dirPath}`);
     return [];
   } catch (e) {
     console.error(`[Folder Fetch] Failed for ${dirPath}:`, e.message);
     return [];
   }
 }
+
 
 export default async function handler(req, res) {
   // Handle CORS
@@ -486,6 +471,7 @@ export default async function handler(req, res) {
     };
 
     // 2. Resolve directly using logged-in NDUS session
+    let premiumApp = null; // Will hold the authenticated TeraBoxApp instance for folder listing
     if (true) {
       console.log(`[Parse] Resolving directly using logged-in NDUS session...`);
       let ndusToken = await getNdusToken();
@@ -503,6 +489,7 @@ export default async function handler(req, res) {
         app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
         app.params.whost = anonApp.params.whost;
         app.params.uhost = anonApp.params.uhost;
+        premiumApp = app; // Save reference for folder listing later
 
         try {
           let ndusData = await app.shortUrlList(strippedShortUrl);
@@ -624,7 +611,7 @@ export default async function handler(req, res) {
         if (Number(file.isdir) === 1) {
           console.log(`[Parse] Found directory: ${file.server_filename}. Fetching contents...`);
           const folderFiles = await fetchFolderFiles(
-            anonApp, `1${strippedShortUrl}`, file.path,
+            premiumApp || anonApp, `1${strippedShortUrl}`, file.path,
             listData.share_id || listData.shareid, listData.uk,
             browserId, ndusToken
           );
