@@ -30,7 +30,7 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const { fs_id, share_id, uk } = req.query;
+  const { fs_id, share_id, uk, sign: cachedSign, timestamp: cachedTs } = req.query;
   if (!fs_id || !share_id || !uk) {
     return res.status(400).json({ error: 'Missing required params: fs_id, share_id, uk' });
   }
@@ -51,31 +51,34 @@ export default async function handler(req, res) {
     app.params.whost = whost;
     app.params.uhost = 'https://c-all.1024terabox.com';
 
-    // Fetch sign and timestamp using app's internal file info method
-    let sign = '';
-    let timestamp = '';
-    try {
-      const infoUrl = `${whost}/api/shareinfo?shareid=${share_id}&uk=${uk}`;
-      const infoRes = await fetch(infoUrl, {
-        signal: AbortSignal.timeout(3000),
-        headers: { 'User-Agent': TB_UA, 'Cookie': buildCookie(ndusToken, browserId) }
-      });
-      const infoContentType = infoRes.headers.get('content-type') || '';
-      if (infoContentType.includes('json')) {
-        const infoData = await infoRes.json();
-        if (infoData && infoData.errno === 0) {
-          sign = infoData.sign || '';
-          timestamp = infoData.timestamp || '';
+    // Fetch sign and timestamp - use cache if provided
+    let sign = cachedSign || '';
+    let timestamp = cachedTs || '';
+
+    if (!sign || !timestamp) {
+      try {
+        const infoUrl = `${whost}/api/shareinfo?shareid=${share_id}&uk=${uk}`;
+        const infoRes = await fetch(infoUrl, {
+          signal: AbortSignal.timeout(3000),
+          headers: { 'User-Agent': TB_UA, 'Cookie': buildCookie(ndusToken, browserId) }
+        });
+        const infoContentType = infoRes.headers.get('content-type') || '';
+        if (infoContentType.includes('json')) {
+          const infoData = await infoRes.json();
+          if (infoData && infoData.errno === 0) {
+            sign = infoData.sign || '';
+            timestamp = infoData.timestamp || '';
+          }
+        } else {
+          console.error('[dlink] shareinfo returned non-JSON response');
         }
-      } else {
-        console.error('[dlink] shareinfo returned non-JSON response');
+      } catch (e) {
+        console.error('[dlink] shareinfo error:', e.message);
       }
-    } catch (e) {
-      console.error('[dlink] shareinfo error:', e.message);
     }
 
     if (!sign || !timestamp) {
-      return res.status(500).json({ error: 'Could not get sign/timestamp for share' });
+      return res.status(200).json({ dlink: '', error: 'Could not get sign/timestamp' });
     }
 
     const dlUrl = new URL(`${whost}/share/download`);
@@ -103,10 +106,10 @@ export default async function handler(req, res) {
     console.log('[dlink] share/download response:', JSON.stringify(dlData));
 
     if (dlData && dlData.errno === 0 && dlData.dlink) {
-      return res.status(200).json({ dlink: dlData.dlink });
+      return res.status(200).json({ dlink: dlData.dlink, sign, timestamp });
     }
 
-    return res.status(200).json({ dlink: '', error: `errno=${dlData && dlData.errno} errmsg=${dlData && dlData.errmsg}` });
+    return res.status(200).json({ dlink: '', error: `errno=${dlData && dlData.errno} errmsg=${dlData && dlData.errmsg}`, sign, timestamp });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
