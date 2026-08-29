@@ -530,8 +530,9 @@ export default async function handler(req, res) {
     if (!listData || listData.errno !== 0) {
       let errMsg = "Failed to parse the link. Please verify the URL or try again later.";
       if (listData) {
-        if (listData.errno === 140 || listData.errno === -140) {
-          errMsg = "This shared link has been deleted, expired, or cancelled by the owner.";
+        const errmsg = String(listData.errmsg || '').toLowerCase();
+        if (listData.errno === 140 || listData.errno === -140 || listData.errno === 116 || listData.errno === 117 || listData.errno === 12 || listData.errno === 110 || listData.errno === -110 || errmsg.includes('delete') || errmsg.includes('expire') || errmsg.includes('late') || errmsg.includes('not exist')) {
+          errMsg = "You're late! The shared files have been deleted or expired.";
         } else if (listData.errno === 105 || listData.errno === -6) {
           errMsg = "Shared link not found or invalid. Please check the URL format.";
         } else if (listData.errno === -9) {
