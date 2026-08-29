@@ -173,6 +173,48 @@ async function resolveDlinkViaShareDownload(whost, sign, timestamp, shareId, uk,
     console.log('[Parse] /share/download fallback error:', e.message);
     return '';
   }
+// Helper to recursively fetch all files inside a directory (folder) in a TeraBox share link
+async function fetchFolderFiles(app, shortUrl, dirPath, shareId, uk, browserId, ndusToken) {
+  try {
+    const listUrl = new URL(`${app.params.whost}/share/list`);
+    listUrl.search = new URLSearchParams({
+      app_id: '250528',
+      web: '1',
+      channel: 'dubian-wap',
+      clienttype: '0',
+      shorturl: shortUrl,
+      dir: dirPath,
+      shareid: String(shareId),
+      uk: String(uk),
+      root: '0',
+    });
+
+    const res = await fetch(listUrl, {
+      headers: {
+        'User-Agent': app.params.ua,
+        'Cookie': `browserid=${browserId}; ndus=${ndusToken}`,
+        'Referer': `${app.params.whost}/`
+      },
+      signal: AbortSignal.timeout(3000),
+    });
+    const j = await res.json();
+    if (j && j.errno === 0 && Array.isArray(j.list)) {
+      let files = [];
+      for (const item of j.list) {
+        if (item.isdir === 1) {
+          const subFiles = await fetchFolderFiles(app, shortUrl, item.path, shareId, uk, browserId, ndusToken);
+          files = files.concat(subFiles);
+        } else {
+          files.push(item);
+        }
+      }
+      return files;
+    }
+    return [];
+  } catch (e) {
+    console.error(`[Folder Fetch] Failed for ${dirPath}:`, e.message);
+    return [];
+  }
 }
 
 export default async function handler(req, res) {
@@ -570,6 +612,25 @@ export default async function handler(req, res) {
       }
     } catch (infoErr) {
       console.error('[Parse] Failed to fetch shortUrlInfo metadata:', infoErr.message);
+    }
+
+    // If any items are directories (folders), recursively fetch files inside them
+    let flattenedList = [];
+    if (listData && Array.isArray(listData.list)) {
+      for (const file of listData.list) {
+        if (file.isdir === 1) {
+          console.log(`[Parse] Found directory: ${file.server_filename}. Fetching contents...`);
+          const folderFiles = await fetchFolderFiles(
+            anonApp, `1${strippedShortUrl}`, file.path,
+            listData.share_id || listData.shareid, listData.uk,
+            browserId, ndusToken
+          );
+          flattenedList = flattenedList.concat(folderFiles);
+        } else {
+          flattenedList.push(file);
+        }
+      }
+      listData.list = flattenedList;
     }
 
     const formattedList = await Promise.all((listData.list || []).map(async (file) => {
