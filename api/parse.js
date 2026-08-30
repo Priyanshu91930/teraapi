@@ -1,7 +1,8 @@
 import { TeraBoxApp } from '../api.js';
 import ytdl from '@distube/ytdl-core';
 import { youtube, igdl, ttdl, fbdown } from 'btch-downloader';
-import { recordPageView, connectToDatabase, ApiSubscription, SystemConfig, LinkCache } from '../db.js';
+import { recordPageView, connectToDatabase, ApiSubscription, SystemConfig, LinkCache, User } from '../db.js';
+import { verifySessionToken } from './auth/me.js';
 
 function formatBytes(bytes, decimals = 2) {
   if (!bytes || isNaN(bytes)) return 'Unknown';
@@ -39,7 +40,97 @@ async function getNdusToken() {
   return process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
 }
 
-// Function to refresh ndus token using credentials
+// ── TIER ROUTING ──────────────────────────────────────────────────────────────
+// Checks whether a given API key belongs to an active, non-expired paid
+// subscription. Returns { isPremium: true, userId: email } or { isPremium: false }.
+// The master API_KEY (used by the website) is treated as FREE tier.
+// Only verified Razorpay-activated ApiSubscription tokens are PAID tier.
+async function checkPremiumEntitlement(apiKey) {
+  if (!apiKey) {
+    return { isPremium: false, reason: 'unauthenticated' };
+  }
+
+  // Master API key check (free/anonymous website access)
+  if (apiKey === process.env.API_KEY) {
+    return { isPremium: false, reason: 'master_key' };
+  }
+
+  try {
+    await connectToDatabase();
+
+    // 1. Google Auth Stateless Session Token Check
+    const decoded = verifySessionToken(apiKey);
+    if (decoded && decoded.email) {
+      const email = decoded.email.toLowerCase().trim();
+      const user = await User.findOne({ email });
+      if (!user) {
+        return { isPremium: false, reason: 'user_not_found' };
+      }
+
+      // Check if user is active Premium
+      const isPremiumUser = user.premiumStatus === 'premium' || user.plan === 'premium';
+      const isExpired = user.premiumExpiresAt && new Date(user.premiumExpiresAt) < new Date();
+
+      if (isPremiumUser && !isExpired) {
+        return { isPremium: true, userId: email, plan: user.plan || 'premium', userType: 'premium' };
+      }
+
+      if (isPremiumUser && isExpired) {
+        user.plan = 'free';
+        user.premiumStatus = 'expired';
+        await user.save();
+        return { isPremium: false, reason: 'premium_expired', userType: 'expired' };
+      }
+
+      // Check Free Trial uses remaining
+      const trials = user.freePremiumUsesRemaining !== undefined ? user.freePremiumUsesRemaining : 3;
+      if (trials > 0) {
+        return { isPremium: true, userId: email, plan: 'free_trial', userType: 'free_trial', trialsRemaining: trials };
+      }
+
+      return { isPremium: false, reason: 'trials_exhausted', userType: 'free_trial', trialsRemaining: 0 };
+    }
+
+    // 2. Developer Subscription Token Check (Backward Compatibility)
+    const sub = await ApiSubscription.findOne({ token: apiKey });
+    if (sub) {
+      if (sub.status !== 'active') return { isPremium: false, reason: 'inactive', status: sub.status };
+      if (sub.expiresAt && new Date(sub.expiresAt) < new Date()) {
+        sub.status = 'expired';
+        await sub.save();
+        return { isPremium: false, reason: 'expired' };
+      }
+      return { isPremium: true, userId: sub.email, plan: sub.plan, userType: 'developer' };
+    }
+
+    return { isPremium: false, reason: 'invalid_token' };
+  } catch (err) {
+    console.error('[Entitlement] Verification failed:', err.message);
+    return { isPremium: false, reason: 'db_error' };
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Atomically consumes 1 free premium trial use from Google user account.
+// Concurrency safe (using Mongoose update condition). Returns true if successfully decremented.
+export async function consumeFreeTrial(email) {
+  try {
+    await connectToDatabase();
+    const updatedUser = await User.findOneAndUpdate(
+      { email: email.toLowerCase().trim(), freePremiumUsesRemaining: { $gt: 0 } },
+      { $inc: { freePremiumUsesRemaining: -1 } },
+      { new: true }
+    );
+    if (updatedUser) {
+      console.log(`[Trial] Consumed 1 free trial for ${email}. Remaining: ${updatedUser.freePremiumUsesRemaining}`);
+      return true;
+    }
+  } catch (err) {
+    console.error('[Trial] Atomic consumption failed:', err.message);
+  }
+  return false;
+}
+
 let autoLoginCooldownUntil = 0; // In-memory rate limit cooldown lock
 let _ndusRefreshInFlight = null; // Single-flight promise lock: prevents concurrent login storms
 
@@ -275,7 +366,7 @@ export default async function handler(req, res) {
   // Security Check: Validate API Key / Subscription Token
   const apiKey = req.headers['x-api-key'] || req.query.apiKey;
   const expectedKey = process.env.API_KEY;
-  
+
   if (apiKey !== expectedKey) {
     if (!apiKey) {
       return res.status(403).json({ error: "Access denied. Missing API key." });
@@ -323,6 +414,15 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Internal security validation error." });
     }
   }
+
+  // ── ENTITLEMENT CHECK ─────────────────────────────────────────────────────
+  // Determine tier ONCE per request. This result gates premium TeraBox usage.
+  // Free = anonymous TeraBox only. Paid = premium NDUS + streaming.
+  // NEVER trust req.body.plan / req.body.premium / query params as proof.
+  const entitlement = await checkPremiumEntitlement(apiKey);
+  const isPremium = entitlement.isPremium;
+  console.log(`[ROUTER] apiKey=${apiKey ? apiKey.substring(0,8)+'...' : 'none'} entitlement=${isPremium ? 'paid('+entitlement.plan+')' : 'free('+entitlement.reason+')'}`);
+  // ─────────────────────────────────────────────────────────────────────────
 
   const { url } = req.query;
 
@@ -515,7 +615,6 @@ export default async function handler(req, res) {
       console.error('[Cache Read Error] Failed to read from cache:', cacheErr.message);
     }
 
-    // 1. Bypass anonymous check completely to speed up response times by avoiding redundant slow network requests
     let listData = null;
     let tokenExpiredDetected = false;
     let dlinkRecoveryFailed = false;
@@ -530,98 +629,123 @@ export default async function handler(req, res) {
       TERABOX_DOMAIN: '1024terabox.com'
     };
 
-    // 2. Resolve directly using logged-in NDUS session
+    // ── TIER-BASED ROUTING ────────────────────────────────────────────────────
+    // PAID users → Premium NDUS route (fast CDN, streaming, dlink recovery)
+    // FREE users → Anonymous-only route (NO ndus, NO premium fallback)
+    //
+    // CRITICAL: FREE requests must NEVER silently fall through to Premium NDUS.
+    // ─────────────────────────────────────────────────────────────────────────
+
     let premiumApp = null; // Will hold the authenticated TeraBoxApp instance for folder listing
-    if (true) {
-      console.log(`[Parse] Resolving directly using logged-in NDUS session...`);
+
+    if (isPremium) {
+      // ── PREMIUM ROUTE ──
+      console.log(`[ROUTER] user=${entitlement.userId || 'api'} feature=parse entitlement=paid`);
+      console.log('[ROUTER] Using premium route (NDUS session)...');
       let ndusToken = await getNdusToken();
-      let autoLoginAttempted = false; // Prevent multiple auto-login attempts per request
-      // Bootstrap: no token anywhere (DB + env empty)? Try auto-login directly
-      // so the system can self-start with just EMAIL/PASSWORD credentials.
+      let autoLoginAttempted = false;
+
+      // Bootstrap: no token anywhere? Try auto-login for self-start.
       if (!ndusToken) {
-        console.log('[Parse] No ndus token found in DB or env. Trying credential bootstrap...');
+        console.log('[Premium] No ndus token found. Trying credential bootstrap...');
         ndusToken = await refreshNdusToken(anonApp.params.whost) || '';
         autoLoginAttempted = true;
       }
+
       if (ndusToken) {
         let app = new TeraBoxApp(ndusToken);
-        app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+        app.params.ua = anonApp.params.ua;
         app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
         app.params.whost = anonApp.params.whost;
         app.params.uhost = anonApp.params.uhost;
-        premiumApp = app; // Save reference for folder listing later
+        premiumApp = app;
 
         try {
           let ndusData = await app.shortUrlList(strippedShortUrl);
-          console.log(`[Parse] NDUS session response:`, JSON.stringify(ndusData));
+          console.log('[Premium] NDUS session response:', JSON.stringify(ndusData));
 
-          // Failsafe: check if link is deleted or expired BEFORE checking token errors
+          // Link expiry check BEFORE token refresh
           const isLinkExpired = ndusData && (
-            ndusData.errno === 140 || ndusData.errno === -140 || 
-            ndusData.errno === 116 || ndusData.errno === 117 || 
-            ndusData.errno === 12 || ndusData.errno === 110 || 
+            ndusData.errno === 140 || ndusData.errno === -140 ||
+            ndusData.errno === 116 || ndusData.errno === 117 ||
+            ndusData.errno === 12  || ndusData.errno === 110 ||
             ndusData.errno === -110 ||
-            String(ndusData.errmsg || '').toLowerCase().includes('delete') || 
+            String(ndusData.errmsg || '').toLowerCase().includes('delete') ||
             String(ndusData.errmsg || '').toLowerCase().includes('expire') ||
             String(ndusData.errmsg || '').toLowerCase().includes('not exist')
           );
 
           if (isLinkExpired) {
-            console.log(`[Parse] Link is expired or deleted. Skipping any token refresh attempts.`);
-            listData = ndusData; // Set so it exits directly with the correct expiration message
+            console.log('[Premium] Link is expired or deleted. Skipping token refresh.');
+            listData = ndusData;
           } else if (ndusData && ndusData.errno === 400141) {
-            // ONLY refresh if it's actually an authentication challenge and not already blocked
             if (!autoLoginAttempted) {
-              console.log('[Parse] NDUS token challenge/expiry detected. Checking system config logs...');
-              // Rate limit check: fetch first to verify if database already contains a rate-limited token signature
+              console.log('[Premium] 400141 token challenge. Attempting single-flight refresh...');
               const freshToken = await refreshNdusToken(anonApp.params.whost);
               autoLoginAttempted = true;
               if (freshToken) {
                 ndusToken = freshToken;
                 app = new TeraBoxApp(ndusToken);
-                app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+                app.params.ua = anonApp.params.ua;
                 app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
                 app.params.whost = anonApp.params.whost;
                 app.params.uhost = anonApp.params.uhost;
-                
                 ndusData = await app.shortUrlList(strippedShortUrl);
-                console.log(`[Parse] Retry NDUS session response:`, JSON.stringify(ndusData));
+                console.log('[Premium] Retry NDUS response:', JSON.stringify(ndusData));
               }
             } else {
-              console.log('[Parse] Auto-login already attempted. Skipping duplicate refresh.');
+              console.log('[Premium] Auto-login already attempted. Skipping duplicate refresh.');
             }
           }
 
           if (ndusData && ndusData.errno === 0) {
             listData = ndusData;
           } else if (ndusData && !isLinkExpired) {
-            // Only trigger token expired alert if it's not a link-specific failure
             tokenExpiredDetected = true;
-            console.warn(`[WARNING] TeraBox Premium Token (ndus) returned error code ${ndusData.errno}.`);
+            console.warn(`[Premium] Token returned error code ${ndusData.errno}.`);
           }
         } catch (e) {
-          console.error(`[Parse] NDUS session failed with error:`, e.message);
+          console.error('[Premium] NDUS session failed:', e.message);
         }
       }
-    }
 
-    // Failsafe Fallback: If premium check failed, try resolving anonymously to fetch metadata
-    if (!listData || listData.errno !== 0) {
-      console.log('[Parse] Premium session failed. Attempting anonymous fallback...');
-      try {
-        const anonAppInstance = new TeraBoxApp("");
-        anonAppInstance.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-        anonAppInstance.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
-        anonAppInstance.params.whost = anonApp.params.whost;
-        anonAppInstance.params.uhost = anonApp.params.uhost;
-
-        const anonRes = await anonAppInstance.shortUrlList(strippedShortUrl);
-        console.log(`[Parse] Anonymous fallback response:`, JSON.stringify(anonRes));
-        if (anonRes && anonRes.errno === 0) {
-          listData = anonRes;
+      // Premium fallback: if NDUS failed, try anonymous (only for paid users)
+      if (!listData || listData.errno !== 0) {
+        console.log('[Premium] NDUS failed. Attempting anonymous fallback for paid user...');
+        try {
+          const anonFallback = new TeraBoxApp('');
+          anonFallback.params.ua = anonApp.params.ua;
+          anonFallback.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
+          anonFallback.params.whost = anonApp.params.whost;
+          anonFallback.params.uhost = anonApp.params.uhost;
+          const anonRes = await anonFallback.shortUrlList(strippedShortUrl);
+          console.log('[Premium] Anonymous fallback response:', JSON.stringify(anonRes));
+          if (anonRes && anonRes.errno === 0) listData = anonRes;
+        } catch (anonErr) {
+          console.error('[Premium] Anonymous fallback failed:', anonErr.message);
         }
-      } catch (anonErr) {
-        console.error('[Parse] Anonymous fallback failed:', anonErr.message);
+      }
+
+    } else {
+      // ── FREE / ANONYMOUS ROUTE ──
+      // IMPORTANT: NO ndus token. NO premium fallback. NO NDUS credentials touched.
+      console.log('[ROUTER] Using anonymous route (free tier). Premium NDUS will NOT be contacted.');
+      try {
+        const freeApp = new TeraBoxApp('');
+        freeApp.params.ua = anonApp.params.ua;
+        freeApp.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
+        freeApp.params.whost = anonApp.params.whost;
+        freeApp.params.uhost = anonApp.params.uhost;
+        const freeRes = await freeApp.shortUrlList(strippedShortUrl);
+        console.log('[Free] Anonymous TeraBox response:', JSON.stringify(freeRes));
+        if (freeRes && freeRes.errno === 0) {
+          listData = freeRes;
+        } else {
+          // If anonymous fails, set listData to the error so downstream error handling works
+          listData = freeRes;
+        }
+      } catch (freeErr) {
+        console.error('[Free] Anonymous TeraBox failed:', freeErr.message);
       }
     }
 
@@ -687,7 +811,12 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Failed to parse the link. Please verify the URL or try again later.' });
     }
 
-    let ndusToken = await getNdusToken();
+    // Only fetch NDUS token for PAID users — FREE users must NEVER use premium credentials
+    // This gates streaming, dlink recovery, and HLS resolution for the file processing below.
+    let ndusToken = isPremium ? await getNdusToken() : '';
+    if (!isPremium) {
+      console.log('[ROUTER] Free tier: ndusToken withheld. Streaming and premium dlink will be skipped.');
+    }
 
     // Generate a single browserid session token
     const browserId = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
@@ -978,6 +1107,31 @@ export default async function handler(req, res) {
         'Referer': `https://www.${anonApp.TERABOX_DOMAIN}/`,
       }
     };
+
+    // ── ATOMIC TRIAL CONSUMPTION ─────────────────────────────────────────────
+    // If user is on a free trial plan and successfully resolved a premium video stream,
+    // consume 1 trial use atomically. If consumption fails (e.g. concurrent race condition),
+    // we revoke the stream URL and return PREMIUM_REQUIRED.
+    if (isPremium && entitlement.userType === 'free_trial') {
+      const hasResolvedStream = formattedList.some(item => item.stream_url && !item.stream_url.startsWith('ERROR'));
+      if (hasResolvedStream) {
+        const success = await consumeFreeTrial(entitlement.userId);
+        if (!success) {
+          console.warn(`[Trial] Trial consumption failed for ${entitlement.userId} (trials exhausted). Revoking stream.`);
+          formattedList.forEach(item => {
+            item.stream_url = '';
+          });
+          return res.status(403).json({
+            success: false,
+            code: 'PREMIUM_REQUIRED',
+            message: 'You have exhausted your 3 free premium trials. Please buy a plan to continue.'
+          });
+        } else {
+          entitlement.trialsRemaining -= 1;
+        }
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     // Save payload to MongoDB Cache (only if it has valid downloadable content and no errors)
     const hasValidCdn = formattedList.some(

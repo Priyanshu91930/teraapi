@@ -124,16 +124,40 @@ const ApiSubscriptionSchema = new mongoose.Schema({
 
 export const ApiSubscription = mongoose.models.ApiSubscription || mongoose.model('ApiSubscription', ApiSubscriptionSchema);
 
-// Define User Schema for Auth
+// Define User Schema for Auth (supporting both local and Google OAuth)
 const AuthUserSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true, index: true },
-  password: { type: String, required: true },
+  password: { type: String, required: false }, // Password optional for Google Auth users
   phone: { type: String },
   role: { type: String, enum: ['user', 'admin'], default: 'user' },
-  createdAt: { type: Date, default: Date.now }
+  
+  // Google Auth Fields
+  googleId: { type: String, unique: true, sparse: true, index: true },
+  name: { type: String },
+  avatar: { type: String },
+
+  // Premium Status Fields
+  plan: { type: String, default: 'free' }, // 'free', 'weekly', 'monthly', 'yearly'
+  freePremiumUsesRemaining: { type: Number, default: 3 }, // 3 free premium uses for every user
+  premiumStatus: { type: String, default: 'free' }, // 'free', 'premium', 'expired'
+  premiumExpiresAt: { type: Date },
+
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
 });
 
 export const User = mongoose.models.User || mongoose.model('User', AuthUserSchema);
+
+// Define Processed Payment Schema for idempotency
+const ProcessedPaymentSchema = new mongoose.Schema({
+  paymentId: { type: String, unique: true, required: true, index: true },
+  email: { type: String, required: true, index: true },
+  amount: { type: Number },
+  status: { type: String },
+  createdAt: { type: Date, default: Date.now }
+});
+
+export const ProcessedPayment = mongoose.models.ProcessedPayment || mongoose.model('ProcessedPayment', ProcessedPaymentSchema);
 
 // Define System Config Schema to store dynamic variables like ndusToken
 const SystemConfigSchema = new mongoose.Schema({

@@ -1,5 +1,7 @@
 import { TeraBoxApp } from '../api.js';
-import { connectToDatabase, SystemConfig } from '../db.js';
+import { connectToDatabase, SystemConfig, ApiSubscription, User } from '../db.js';
+import { verifySessionToken } from './auth/me.js';
+import { consumeFreeTrial } from './parse.js';
 
 async function getNdusToken() {
   try {
@@ -26,8 +28,80 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const apiKey = req.query.apiKey || req.headers['x-api-key'];
-  if (!apiKey || apiKey !== process.env.API_KEY) {
-    return res.status(401).json({ error: 'Unauthorized' });
+
+  // ── PREMIUM GATE: /dlink is PAID-only ──
+  // Master API_KEY (website/free users) must NOT access premium NDUS via /dlink.
+  // Only verified active ApiSubscription tokens or Google authenticated accounts are permitted.
+  const isMasterKey = apiKey && apiKey === process.env.API_KEY;
+  let isPremium = false;
+  let isTrial = false;
+  let userEmail = '';
+
+  if (isMasterKey) {
+    console.log('[ROUTER] /dlink: master_key entitlement=free → PREMIUM_REQUIRED');
+    return res.status(403).json({
+      success: false,
+      code: 'PREMIUM_REQUIRED',
+      message: 'This feature requires an active premium plan.'
+    });
+  } else if (apiKey) {
+    try {
+      await connectToDatabase();
+
+      // 1. Google Auth session check
+      const decoded = verifySessionToken(apiKey);
+      if (decoded && decoded.email) {
+        userEmail = decoded.email.toLowerCase().trim();
+        const user = await User.findOne({ email: userEmail });
+        if (user) {
+          const isPremiumUser = user.premiumStatus === 'premium' || user.plan === 'premium';
+          const isExpired = user.premiumExpiresAt && new Date(user.premiumExpiresAt) < new Date();
+
+          if (isPremiumUser && !isExpired) {
+            isPremium = true;
+            console.log(`[ROUTER] /dlink: user=${userEmail} entitlement=paid(${user.plan})`);
+          } else if (isPremiumUser && isExpired) {
+            user.plan = 'free';
+            user.premiumStatus = 'expired';
+            await user.save();
+            return res.status(403).json({ success: false, code: 'PREMIUM_EXPIRED', message: 'Your premium plan has expired.' });
+          } else {
+            // Free account - check trial limit
+            const trials = user.freePremiumUsesRemaining !== undefined ? user.freePremiumUsesRemaining : 3;
+            if (trials > 0) {
+              isPremium = true;
+              isTrial = true;
+              console.log(`[ROUTER] /dlink: user=${userEmail} entitlement=free_trial trials_remaining=${trials}`);
+            } else {
+              return res.status(403).json({ success: false, code: 'PREMIUM_REQUIRED', message: 'You have exhausted your 3 free trials. Please upgrade to premium.' });
+            }
+          }
+        }
+      }
+
+      // 2. Developer token check (Backward Compatibility)
+      if (!isPremium && !isTrial) {
+        const sub = await ApiSubscription.findOne({ token: apiKey });
+        if (sub && sub.status === 'active') {
+          const isExpired = sub.expiresAt && new Date(sub.expiresAt) < new Date();
+          if (!isExpired) {
+            isPremium = true;
+            console.log(`[ROUTER] /dlink: developer=${sub.email} entitlement=developer`);
+          } else {
+            return res.status(403).json({ success: false, code: 'PREMIUM_EXPIRED', message: 'Your premium plan has expired.' });
+          }
+        }
+      }
+    } catch (dbErr) {
+      console.error('[dlink] Entitlement DB check failed:', dbErr.message);
+      return res.status(500).json({ error: 'Internal entitlement validation error.' });
+    }
+  } else {
+    return res.status(401).json({ error: 'Unauthorized. Missing API key.' });
+  }
+
+  if (!isPremium && !isTrial) {
+    return res.status(403).json({ success: false, code: 'PREMIUM_REQUIRED', message: 'This feature requires an active premium plan.' });
   }
 
   const { fs_id, share_id, uk, sign: cachedSign, timestamp: cachedTs } = req.query;
@@ -106,6 +180,18 @@ export default async function handler(req, res) {
     console.log('[dlink] share/download response:', JSON.stringify(dlData));
 
     if (dlData && dlData.errno === 0 && dlData.dlink) {
+      // Consume trial for trial users on successful dlink resolution
+      if (isTrial) {
+        const success = await consumeFreeTrial(userEmail);
+        if (!success) {
+          console.warn(`[Trial] dlink trial consumption failed for ${userEmail} (trials exhausted).`);
+          return res.status(403).json({
+            success: false,
+            code: 'PREMIUM_REQUIRED',
+            message: 'You have exhausted your 3 free premium trials. Please buy a plan to continue.'
+          });
+        }
+      }
       return res.status(200).json({ dlink: dlData.dlink, sign, timestamp });
     }
 

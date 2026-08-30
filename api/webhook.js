@@ -1,4 +1,4 @@
-import { connectToDatabase, ApiSubscription } from '../db.js';
+import { connectToDatabase, ApiSubscription, User, ProcessedPayment } from '../db.js';
 import crypto from 'node:crypto';
 
 export default async function handler(req, res) {
@@ -38,8 +38,18 @@ export default async function handler(req, res) {
         const subEntity = payload.subscription.entity;
         const subscriptionId = subEntity.id;
         const notes = subEntity.notes || {};
-        const email = notes.email || subEntity.email || 'unknown@example.com';
+        const email = (notes.email || subEntity.email || 'unknown@example.com').toLowerCase().trim();
         const plan = notes.plan || 'monthly';
+
+        // ── IDEMPOTENCY CHECK ──────────────────────────────────────────────────
+        // Prevent duplicate premium activations from repeated webhook deliveries
+        const paymentIdempotencyKey = `${subscriptionId}_${event}`;
+        const alreadyProcessed = await ProcessedPayment.findOne({ paymentId: paymentIdempotencyKey });
+        if (alreadyProcessed) {
+            console.log(`[Webhook] Idempotency: Event ${paymentIdempotencyKey} already processed. Skipping.`);
+            return res.status(200).json({ success: true, message: 'Event already processed (idempotent)' });
+        }
+        // ──────────────────────────────────────────────────────────────────────
 
         // Determine daily request quota based on duration plan
         let requestLimit = 50000;
@@ -49,15 +59,21 @@ export default async function handler(req, res) {
             requestLimit = 100000;
         }
 
-        if (event === 'subscription.activated' || event === 'subscription.charged') {
-            // Generate a secure API Access Token
-            const token = 'tera_api_' + crypto.randomBytes(16).toString('hex');
-            
-            // Calculate expiry (1 month from now)
-            const expiresAt = new Date();
-            expiresAt.setMonth(expiresAt.getMonth() + 1);
+        // Calculate plan expiry date
+        const expiresAt = new Date();
+        if (plan === 'weekly') {
+            expiresAt.setDate(expiresAt.getDate() + 7);
+        } else if (plan === 'yearly') {
+            expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+        } else {
+            expiresAt.setMonth(expiresAt.getMonth() + 1); // Default: monthly
+        }
 
-            // Upsert subscription into MongoDB
+        if (event === 'subscription.activated' || event === 'subscription.charged') {
+            // Generate a secure API Access Token for developer use
+            const token = 'tera_api_' + crypto.randomBytes(16).toString('hex');
+
+            // Upsert developer ApiSubscription
             const subscription = await ApiSubscription.findOneAndUpdate(
                 { subscriptionId },
                 {
@@ -74,8 +90,29 @@ export default async function handler(req, res) {
                 { upsert: true, returnDocument: 'after' }
             );
 
-            console.log(`[Webhook] Activated subscription ${subscriptionId} for ${email}. Token: ${subscription.token}`);
+            // ── GOOGLE USER PREMIUM UPGRADE ────────────────────────────────────
+            // If the email matches a Google Auth user, upgrade their premium status
+            // in the User collection so website premium features unlock immediately.
+            const googleUser = await User.findOne({ email });
+            if (googleUser) {
+                googleUser.plan = plan;
+                googleUser.premiumStatus = 'premium';
+                googleUser.premiumExpiresAt = expiresAt;
+                googleUser.updatedAt = new Date();
+                await googleUser.save();
+                console.log(`[Webhook] Google user ${email} upgraded to premium(${plan}) until ${expiresAt.toISOString()}`);
+            }
+            // ──────────────────────────────────────────────────────────────────
 
+            // Log processed event for idempotency
+            await ProcessedPayment.create({
+                paymentId: paymentIdempotencyKey,
+                email,
+                amount: 0,
+                status: 'activated'
+            });
+
+            console.log(`[Webhook] Activated subscription ${subscriptionId} for ${email}. Token: ${subscription.token}`);
             return res.status(200).json({
                 success: true,
                 message: 'Subscription activated',
@@ -83,11 +120,29 @@ export default async function handler(req, res) {
             });
 
         } else if (event === 'subscription.cancelled' || event === 'subscription.halted') {
-            // Disable token in MongoDB
+            // Disable developer API token
             await ApiSubscription.updateOne(
                 { subscriptionId },
                 { $set: { status: 'cancelled' } }
             );
+
+            // Downgrade Google user premium status when subscription cancelled
+            const googleUser = await User.findOne({ email });
+            if (googleUser && googleUser.premiumStatus === 'premium') {
+                googleUser.plan = 'free';
+                googleUser.premiumStatus = 'free';
+                googleUser.updatedAt = new Date();
+                await googleUser.save();
+                console.log(`[Webhook] Google user ${email} downgraded to free (subscription cancelled).`);
+            }
+
+            // Log processed event for idempotency
+            await ProcessedPayment.create({
+                paymentId: paymentIdempotencyKey,
+                email,
+                amount: 0,
+                status: 'cancelled'
+            });
 
             console.log(`[Webhook] Cancelled subscription ${subscriptionId} for ${email}`);
             return res.status(200).json({ success: true, message: 'Subscription cancelled' });

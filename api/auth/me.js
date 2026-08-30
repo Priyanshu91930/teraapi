@@ -28,12 +28,22 @@ export default async function handler(req, res) {
         return res.status(200).end();
     }
 
+    // Accept token from either Authorization: Bearer or x-api-key header
+    // (header.php sends it via x-api-key for server-side fetches)
     const authHeader = req.headers['authorization'];
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const xApiKey = req.headers['x-api-key'];
+    
+    let token = null;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.split(' ')[1];
+    } else if (xApiKey) {
+        token = xApiKey;
+    }
+
+    if (!token) {
         return res.status(401).json({ error: 'Unauthorized. Missing token.' });
     }
 
-    const token = authHeader.split(' ')[1];
     const decoded = verifySessionToken(token);
 
     if (!decoded) {
@@ -48,7 +58,7 @@ export default async function handler(req, res) {
             return res.status(404).json({ error: 'User not found.' });
         }
 
-        // Fetch subscription
+        // Fetch subscription (for developer API tokens)
         let subscription = await ApiSubscription.findOne({ email: user.email, status: 'active' });
 
         // Admin override: Admin gets automatic unlimited premium access
@@ -74,6 +84,12 @@ export default async function handler(req, res) {
             user: {
                 email: user.email,
                 role: user.role,
+                name: user.name || user.email.split('@')[0],
+                avatar: user.avatar || '',
+                plan: user.plan || 'free',
+                freePremiumUsesRemaining: user.freePremiumUsesRemaining !== undefined ? user.freePremiumUsesRemaining : 3,
+                premiumStatus: user.premiumStatus || 'free',
+                premiumExpiresAt: user.premiumExpiresAt || null,
                 createdAt: user.createdAt
             },
             subscription: subscription ? {
