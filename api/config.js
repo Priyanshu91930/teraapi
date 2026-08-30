@@ -45,9 +45,21 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
-      const { ndus } = req.body || {};
+      const body = req.body || {};
+      const { ndus, action } = body;
+
+      // Allow clearing the token via action=clear or ndus='' (empty string)
+      if (action === 'clear' || ndus === '') {
+        await SystemConfig.deleteOne({ key: 'TERABOX_NDUS' });
+        console.log('[Config API] TERABOX_NDUS cleared from MongoDB. API will run in fully anonymous mode.');
+        return res.status(200).json({
+          status: 'success',
+          message: 'TERABOX_NDUS token cleared. API is now running in anonymous mode (no premium credentials).'
+        });
+      }
+
       if (!ndus) {
-        return res.status(400).json({ error: "Missing 'ndus' parameter in request body." });
+        return res.status(400).json({ error: "Missing 'ndus' parameter in request body. Use action='clear' to remove token." });
       }
 
       // Update the cache in MongoDB
@@ -59,8 +71,8 @@ export default async function handler(req, res) {
 
       console.log('[Config API] Updated TERABOX_NDUS successfully in MongoDB config.');
       return res.status(200).json({ 
-        status: "success", 
-        message: "TERABOX_NDUS updated successfully in database cache.",
+        status: 'success', 
+        message: 'TERABOX_NDUS updated successfully in database cache.',
         updatedAt: updatedConfig.updatedAt
       });
     }

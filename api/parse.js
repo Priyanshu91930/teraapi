@@ -40,6 +40,117 @@ async function getNdusToken() {
   return process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
 }
 
+// ── ANONYMOUS MULTI-DOMAIN SHARE FETCHER ────────────────────────────────────
+// Fetches TeraBox share list WITHOUT any login credentials.
+// Strategy: Try multiple TeraBox mirror domains. For each, first try the
+// /share/list endpoint with jsToken=''; if that returns errno 4000020
+// (verification), skip and try next domain. No ndus, no cookies, no login.
+// Works because some mirrors allow anonymous listing without jsToken.
+async function fetchAnonShareList(shortUrl) {
+  const { request } = await import('undici');
+
+  // Prioritised list: start with mirrors that tend to not require login for listing
+  const MIRROR_DOMAINS = [
+    'https://www.1024terabox.com',
+    'https://www.freeterabox.com',
+    'https://www.4funbox.com',
+    'https://www.mirrobox.com',
+    'https://www.nephobox.com',
+  ];
+
+  const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
+  for (const domain of MIRROR_DOMAINS) {
+    // ── Step 1: Try to get jsToken from the share page itself (not /main) ──
+    let jsToken = '';
+    try {
+      const sharePageUrl = `${domain}/s/${shortUrl}`;
+      const pageRes = await request(sharePageUrl, {
+        method: 'GET',
+        headers: { 'User-Agent': UA },
+        signal: AbortSignal.timeout(8000),
+        maxRedirections: 5,
+      });
+      if (pageRes.statusCode === 200) {
+        const html = await pageRes.body.text();
+        // Try to extract jsToken from the share page HTML
+        const m1 = html.match(/window\.jsToken%20%3D%20a%7D%3Bfn%28%22([^"]+)%22%29/);
+        const m2 = html.match(/jsToken["\s]*[:=]["\s]*['"]([A-Za-z0-9%_-]{10,})['"]/);
+        const m3 = html.match(/%28%22([A-Za-z0-9%_\-]{10,})%22%29/);
+        jsToken = (m1 && m1[1]) || (m2 && m2[1]) || (m3 && m3[1]) || '';
+        if (jsToken) {
+          console.log(`[Anon] jsToken extracted from share page on ${domain}: ${jsToken.substring(0, 12)}...`);
+        } else {
+          console.log(`[Anon] No jsToken found on share page ${domain}, will try direct API call.`);
+        }
+      }
+    } catch (pageErr) {
+      console.warn(`[Anon] Share page fetch failed on ${domain}:`, pageErr.message);
+    }
+
+    // ── Step 2: Call /share/list directly ──
+    try {
+      const apiUrl = new URL(`${domain}/share/list`);
+      apiUrl.search = new URLSearchParams({
+        app_id: '250528',
+        channel: 'dubox',
+        clienttype: '0',
+        jsToken: jsToken,
+        shorturl: shortUrl,
+        by: 'name',
+        order: 'asc',
+        num: 20000,
+        dir: '',
+        page: 1,
+        dlink: 1,
+        root: 1,
+      }).toString();
+
+      const listRes = await request(apiUrl.toString(), {
+        method: 'GET',
+        headers: {
+          'User-Agent': UA,
+          'Referer': `${domain}/`,
+          'Accept': 'application/json, text/plain, */*',
+        },
+        signal: AbortSignal.timeout(10000),
+        maxRedirections: 3,
+      });
+
+      if (listRes.statusCode !== 200) {
+        console.warn(`[Anon] ${domain} returned HTTP ${listRes.statusCode} for share/list. Skipping.`);
+        await listRes.body.dump().catch(() => {});
+        continue;
+      }
+
+      const rdata = await listRes.body.json();
+      console.log(`[Anon] ${domain} share/list errno=${rdata.errno}`);
+
+      // errno 0 = success
+      if (rdata.errno === 0) {
+        return rdata;
+      }
+
+      // errno 4000020 / 102 = verification / login required → try next domain
+      if (rdata.errno === 4000020 || rdata.errno === 102) {
+        console.warn(`[Anon] ${domain} requires verification (errno ${rdata.errno}). Trying next domain...`);
+        continue;
+      }
+
+      // Other non-zero errnos (link expired, deleted etc.) — return as-is, no point retrying
+      console.warn(`[Anon] ${domain} returned non-retryable errno ${rdata.errno}.`);
+      return rdata;
+
+    } catch (apiErr) {
+      console.warn(`[Anon] ${domain} API call failed:`, apiErr.message);
+    }
+  }
+
+  // All domains exhausted
+  return { errno: 102, errmsg: 'All anonymous domains blocked or rate-limited. Please try again later.' };
+}
+
+
 // ── TIER ROUTING ──────────────────────────────────────────────────────────────
 // Checks whether a given API key belongs to an active, non-expired paid
 // subscription. Returns { isPremium: true, userId: email } or { isPremium: false }.
@@ -728,22 +839,15 @@ export default async function handler(req, res) {
 
     } else {
       // ── FREE / ANONYMOUS ROUTE ──
-      // IMPORTANT: NO ndus token. NO premium fallback. NO NDUS credentials touched.
+      // NO ndus token. NO premium fallback. NO NDUS credentials touched.
+      // Uses multi-domain fallback: extracts jsToken from share page itself,
+      // then calls /share/list directly across multiple TeraBox mirror domains.
       console.log('[ROUTER] Using anonymous route (free tier). Premium NDUS will NOT be contacted.');
       try {
-        const freeApp = new TeraBoxApp('');
-        freeApp.params.ua = anonApp.params.ua;
-        freeApp.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
-        freeApp.params.whost = anonApp.params.whost;
-        freeApp.params.uhost = anonApp.params.uhost;
-        const freeRes = await freeApp.shortUrlList(strippedShortUrl);
-        console.log('[Free] Anonymous TeraBox response:', JSON.stringify(freeRes));
-        if (freeRes && freeRes.errno === 0) {
-          listData = freeRes;
-        } else {
-          // If anonymous fails, set listData to the error so downstream error handling works
-          listData = freeRes;
-        }
+        const freeRes = await fetchAnonShareList(strippedShortUrl);
+        console.log('[Free] Anonymous TeraBox response errno:', freeRes?.errno);
+        // Accept even partial results (errno may be 0 with empty list for some mirrors)
+        listData = freeRes;
       } catch (freeErr) {
         console.error('[Free] Anonymous TeraBox failed:', freeErr.message);
       }
