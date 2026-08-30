@@ -47,7 +47,9 @@ async function getNdusToken() {
 // (verification), skip and try next domain. No ndus, no cookies, no login.
 // Works because some mirrors allow anonymous listing without jsToken.
 async function fetchAnonShareList(shortUrl) {
-  const { request } = await import('undici');
+  const { request, Agent } = await import('undici');
+  // Agent-level redirect following (maxRedirections is NOT a request-level option in undici)
+  const redirectAgent = new Agent({ maxRedirections: 5 });
 
   // Prioritised list: start with mirrors that tend to not require login for listing
   const MIRROR_DOMAINS = [
@@ -68,8 +70,8 @@ async function fetchAnonShareList(shortUrl) {
       const pageRes = await request(sharePageUrl, {
         method: 'GET',
         headers: { 'User-Agent': UA },
+        dispatcher: redirectAgent,
         signal: AbortSignal.timeout(8000),
-        maxRedirections: 5,
       });
       if (pageRes.statusCode === 200) {
         const html = await pageRes.body.text();
@@ -113,8 +115,8 @@ async function fetchAnonShareList(shortUrl) {
           'Referer': `${domain}/`,
           'Accept': 'application/json, text/plain, */*',
         },
+        dispatcher: redirectAgent,
         signal: AbortSignal.timeout(10000),
-        maxRedirections: 3,
       });
 
       if (listRes.statusCode !== 200) {
