@@ -155,5 +155,15 @@ JoinRequestSchema.index({ userId: 1, chatId: 1 }, { unique: true });
 
 export const JoinRequest = mongoose.models.JoinRequest || mongoose.model('JoinRequest', JoinRequestSchema);
 
+// Define Link Cache Schema to cache API responses for 1 hour to prevent TeraBox rate limiting
+const LinkCacheSchema = new mongoose.Schema({
+  shortUrl: { type: String, unique: true, required: true, index: true },
+  response: { type: mongoose.Schema.Types.Mixed, required: true },
+  createdAt: { type: Date, default: Date.now, expires: 3600 } // Auto-expire after 1 hour (3600 seconds)
+});
+
+export const LinkCache = mongoose.models.LinkCache || mongoose.model('LinkCache', LinkCacheSchema);
+
+
 
 

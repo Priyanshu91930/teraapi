@@ -1,7 +1,7 @@
 import { TeraBoxApp } from '../api.js';
 import ytdl from '@distube/ytdl-core';
 import { youtube, igdl, ttdl, fbdown } from 'btch-downloader';
-import { recordPageView, connectToDatabase, ApiSubscription, SystemConfig } from '../db.js';
+import { recordPageView, connectToDatabase, ApiSubscription, SystemConfig, LinkCache } from '../db.js';
 
 function formatBytes(bytes, decimals = 2) {
   if (!bytes || isNaN(bytes)) return 'Unknown';
@@ -458,7 +458,21 @@ export default async function handler(req, res) {
     }
 
     // Always strip the leading '1' from the shortUrl because the /share/list API expects the raw surl token
-    const strippedShortUrl = shortUrl.replace(/^1/, '');    // 1. Bypass anonymous check completely to speed up response times by avoiding redundant slow network requests
+    const strippedShortUrl = shortUrl.replace(/^1/, '');
+
+    // ─── CACHE CHECK ───
+    try {
+      await connectToDatabase();
+      const cachedRecord = await LinkCache.findOne({ shortUrl: strippedShortUrl });
+      if (cachedRecord && cachedRecord.response) {
+        console.log(`[Cache Hit] Serving cached response for surl: ${strippedShortUrl}`);
+        return res.status(200).json(cachedRecord.response);
+      }
+    } catch (cacheErr) {
+      console.error('[Cache Read Error] Failed to read from cache:', cacheErr.message);
+    }
+
+    // 1. Bypass anonymous check completely to speed up response times by avoiding redundant slow network requests
     let listData = null;
     let tokenExpiredDetected = false;
     let dlinkRecoveryFailed = false;
@@ -638,6 +652,7 @@ export default async function handler(req, res) {
       let streamUrl = '';
       let debugStreamEndpoint = '';
       let debugStreamData = null;
+      let autoLoginAttempted = false;
 
       // For folder-expanded files, fetch dlink via share/download (use cached sign/timestamp)
       if (isFolderExpanded) {
@@ -817,7 +832,8 @@ export default async function handler(req, res) {
       sendTelegramTokenAlert().catch(err => console.error('[Telegram] Alert failed:', err.message));
     }
 
-    return res.status(200).json({
+    // Prepare the final payload response
+    const payload = {
       list: formattedList,
       listData_keys: listData ? Object.keys(listData) : [],
       listData_share_id: listData ? listData.share_id : null,
@@ -834,7 +850,24 @@ export default async function handler(req, res) {
         'Connection': 'keep-alive',
         'Referer': `https://www.${anonApp.TERABOX_DOMAIN}/`,
       }
-    });
+    };
+
+    // Save payload to MongoDB Cache (only if it has valid downloadable content)
+    const hasValidCdn = formattedList.some(item => item.status === 'ok' && item.dlink);
+    if (hasValidCdn) {
+      try {
+        await LinkCache.findOneAndUpdate(
+          { shortUrl: strippedShortUrl },
+          { response: payload, createdAt: new Date() },
+          { upsert: true, new: true }
+        );
+        console.log(`[Cache Save] Successfully cached resolved response for surl: ${strippedShortUrl}`);
+      } catch (cacheErr) {
+        console.error('[Cache Save Error] Failed to write response to cache:', cacheErr.message);
+      }
+    }
+
+    return res.status(200).json(payload);
   } catch (error) {
     return res.status(500).json({
       error: error.message || "Failed to resolve link. Please verify the URL and try again.",
