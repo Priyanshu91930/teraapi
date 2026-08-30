@@ -235,6 +235,20 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  // Dynamic API Kill Switch: Check MongoDB SystemConfig status configuration toggle
+  try {
+    await connectToDatabase();
+    const apiStatus = await SystemConfig.findOne({ key: 'API_STATUS' });
+    if (apiStatus && apiStatus.value === 'off') {
+      console.log('[API Status] Kill switch is active (off). Serving 503 temporarily unavailable...');
+      return res.status(503).json({
+        error: "API is temporarily offline for maintenance. Please check back later."
+      });
+    }
+  } catch (dbErr) {
+    console.error('[API Status Check Error] Failed to read API status config:', dbErr.message);
+  }
+
   // Extract siteOrigin from referer or fallback to default domain
   let siteOrigin = 'https://teraboxdownloader.co.in';
   if (req.headers.referer) {
