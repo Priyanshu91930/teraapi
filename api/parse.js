@@ -41,69 +41,87 @@ async function getNdusToken() {
 
 // Function to refresh ndus token using credentials
 let autoLoginCooldownUntil = 0; // In-memory rate limit cooldown lock
+let _ndusRefreshInFlight = null; // Single-flight promise lock: prevents concurrent login storms
 
-// Function to refresh ndus token using credentials
+// Function to refresh ndus token using credentials.
+// Single-flight: if a refresh is already in progress, all callers await the same promise.
 export async function refreshNdusToken(whost) {
-  // Check if we are currently in cooldown to prevent spamming TeraBox and getting IP-blocked
+  // ── Single-flight lock: if a refresh is already running, wait for it ──
+  if (_ndusRefreshInFlight) {
+    console.log('[NDUS Auto-Login] Refresh already in-flight. Waiting for existing promise...');
+    return _ndusRefreshInFlight;
+  }
+
+  // ── Cooldown check: prevent rapid re-login after rate-limit response ──
   if (Date.now() < autoLoginCooldownUntil) {
     const remainingMin = Math.ceil((autoLoginCooldownUntil - Date.now()) / 60000);
-    console.log(`[NDUS Auto-Login] Ignored. Auto-login is on cooldown lock for another ${remainingMin} minutes due to rate-limiting.`);
+    console.log(`[NDUS Auto-Login] Ignored. On cooldown for another ${remainingMin} min due to rate-limiting.`);
     return null;
   }
 
-  const email = process.env.TERABOX_EMAIL || process.env.TERABOX_USER;
-  const password = process.env.TERABOX_PASSWORD || process.env.TERABOX_PASS;
-  
-  if (!email || !password) {
-    console.log('[NDUS Auto-Login] Missing credentials (TERABOX_EMAIL / TERABOX_PASSWORD) in env variables.');
-    return null;
-  }
+  // ── Start the actual refresh, wrapped in a single-flight promise ──
+  _ndusRefreshInFlight = (async () => {
+    try {
+      const email = process.env.TERABOX_EMAIL || process.env.TERABOX_USER;
+      const password = process.env.TERABOX_PASSWORD || process.env.TERABOX_PASS;
 
-  console.log(`[NDUS Auto-Login] Attempting passport login for email: ${email}`);
-  try {
-    const app = new TeraBoxApp('');
-    app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-    const tbDomains = ['1024tera','1024terabox','terasharefile','terashare','terasharelink','nephobox','teraboxapp','tibbox','tibibox','freeterabox','teraboxlink','mirrobox','4funbox','terabox.fun','momerybox','terabox.app','terabox.ap','dubox','terabox.best','teraboxshare','terafileshare','1024box'];
-    app.TERABOX_DOMAIN = tbDomains.some(d => whost.includes(d)) ? '1024terabox.com' : 'terabox.com';
-    app.params.whost = whost;
-    app.params.uhost = whost;
-
-    const preLoginData = await app.passportPreLogin(email);
-    const loginRes = await app.passportLogin(preLoginData, email, password);
-
-    if (loginRes.code === 0 && loginRes.data && loginRes.data.ndus) {
-      // Use FULL cookie string from login (ndus + browserid + csrf + all session cookies)
-      const fullCookies = loginRes.data.cookies || `ndus=${loginRes.data.ndus}`;
-      const newNdus = loginRes.data.ndus;
-      console.log('[NDUS Auto-Login] Success! New token generated.');
-      console.log('[NDUS Auto-Login] Full cookies preview:', fullCookies.substring(0, 60) + '...');
-
-      // Save full cookie string to MongoDB persistently
-      try {
-        await SystemConfig.findOneAndUpdate(
-          { key: 'TERABOX_NDUS' },
-          { value: fullCookies, updatedAt: new Date() },
-          { upsert: true }
-        );
-        console.log('[NDUS Auto-Login] Saved full cookies to MongoDB configuration cache.');
-      } catch (dbErr) {
-        console.error('[NDUS Auto-Login] Failed to save to MongoDB:', dbErr.message);
+      if (!email || !password) {
+        console.log('[NDUS Auto-Login] Missing credentials (TERABOX_EMAIL / TERABOX_PASSWORD) in env variables.');
+        return null;
       }
-      return fullCookies;
-    } else {
-      console.error('[NDUS Auto-Login] Failed. Response:', JSON.stringify(loginRes));
-      
-      // Target verification / spam limit check to activate cooldown lock
-      if (loginRes.code === 102 || String(loginRes.msg).includes('extra') || String(loginRes.msg).includes('verify')) {
-        const timeoutSeconds = (loginRes.data && loginRes.data.spam_expire_in) || 1500;
-        console.warn(`[NDUS Auto-Login] TeraBox rate-limiting/spam lock detected! Locking logins for ${Math.ceil(timeoutSeconds / 60)} minutes.`);
-        autoLoginCooldownUntil = Date.now() + (timeoutSeconds * 1000);
+
+      console.log(`[NDUS Auto-Login] Attempting passport login for email: ${email}`);
+      const app = new TeraBoxApp('');
+      app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+      const tbDomains = ['1024tera','1024terabox','terasharefile','terashare','terasharelink','nephobox','teraboxapp','tibbox','tibibox','freeterabox','teraboxlink','mirrobox','4funbox','terabox.fun','momerybox','terabox.app','terabox.ap','dubox','terabox.best','teraboxshare','terafileshare','1024box'];
+      app.TERABOX_DOMAIN = tbDomains.some(d => whost.includes(d)) ? '1024terabox.com' : 'terabox.com';
+      app.params.whost = whost;
+      app.params.uhost = whost;
+
+      const preLoginData = await app.passportPreLogin(email);
+      const loginRes = await app.passportLogin(preLoginData, email, password);
+
+      if (loginRes.code === 0 && loginRes.data && loginRes.data.ndus) {
+        // Use FULL cookie string from login (ndus + browserid + csrf + all session cookies)
+        const fullCookies = loginRes.data.cookies || `ndus=${loginRes.data.ndus}`;
+        console.log('[NDUS Auto-Login] Success! New token generated.');
+        console.log('[NDUS Auto-Login] Full cookies preview:', fullCookies.substring(0, 60) + '...');
+
+        // Save full cookie string to MongoDB persistently
+        try {
+          await SystemConfig.findOneAndUpdate(
+            { key: 'TERABOX_NDUS' },
+            { value: fullCookies, updatedAt: new Date() },
+            { upsert: true }
+          );
+          console.log('[NDUS Auto-Login] Saved full cookies to MongoDB configuration cache.');
+        } catch (dbErr) {
+          console.error('[NDUS Auto-Login] Failed to save to MongoDB:', dbErr.message);
+        }
+        return fullCookies;
+      } else {
+        console.error('[NDUS Auto-Login] Failed. Response:', JSON.stringify(loginRes));
+        
+        // Target verification / spam limit check to activate cooldown lock
+        if (loginRes.code === 102 || String(loginRes.msg).includes('extra') || String(loginRes.msg).includes('verify')) {
+          const timeoutSeconds = (loginRes.data && loginRes.data.spam_expire_in) || 1500;
+          const safetyBuffer = 60; // 60 seconds safety buffer
+          const cooldownMs = (timeoutSeconds + safetyBuffer) * 1000;
+          autoLoginCooldownUntil = Date.now() + cooldownMs;
+          console.warn(`[NDUS Auto-Login] TeraBox rate-limiting/spam lock detected! Locking logins for ${Math.ceil(cooldownMs / 60000)} minutes (spam_expire_in=${timeoutSeconds}s + 60s buffer).`);
+        }
+        return null;
       }
+    } catch (loginErr) {
+      console.error('[NDUS Auto-Login] Exception occurred:', loginErr.message);
+      return null;
+    } finally {
+      // Always release the single-flight lock so future requests can retry
+      _ndusRefreshInFlight = null;
     }
-  } catch (loginErr) {
-    console.error('[NDUS Auto-Login] Exception occurred:', loginErr.message);
-  }
-  return null;
+  })();
+
+  return _ndusRefreshInFlight;
 }
 
 // Follow TeraBox dlink redirect to get actual CDN URL (faster download)
@@ -619,20 +637,54 @@ export default async function handler(req, res) {
     }
 
     if (!listData || listData.errno !== 0) {
-      let errMsg = "Failed to parse the link. Please verify the URL or try again later.";
       if (listData) {
         const errmsg = String(listData.errmsg || '').toLowerCase();
-        if (listData.errno === 140 || listData.errno === -140 || listData.errno === 116 || listData.errno === 117 || listData.errno === 12 || listData.errno === 110 || listData.errno === -110 || errmsg.includes('delete') || errmsg.includes('expire') || errmsg.includes('late') || errmsg.includes('not exist')) {
-          errMsg = "You're late! The shared files have been deleted or expired.";
-        } else if (listData.errno === 105 || listData.errno === -6) {
-          errMsg = "Shared link not found or invalid. Please check the URL format.";
-        } else if (listData.errno === -9 || listData.errno === 2130 || listData.errno === -2130) {
-          errMsg = "This link requires a password. Password-protected links are currently not supported.";
-        } else {
-          errMsg = `TeraBox API returned error code ${listData.errno}. ${listData.errmsg || ''}`;
+        const errno = listData.errno;
+
+        // ── SHARE_UNAVAILABLE: link actually expired/deleted/cancelled ──
+        if (errno === 140 || errno === -140 || errno === 116 || errno === 117 || 
+            errno === 12 || errno === 110 || errno === -110 || 
+            errmsg.includes('delete') || errmsg.includes('expire') || errmsg.includes('not exist')) {
+          return res.status(404).json({
+            success: false,
+            code: 'SHARE_UNAVAILABLE',
+            message: 'This shared link is expired or unavailable.'
+          });
         }
+
+        // ── TERABOX_VERIFICATION_REQUIRED: 400141 or need verify ──
+        if (errno === 400141 || errmsg.includes('need verify') || errmsg.includes('verify_v2')) {
+          return res.status(503).json({
+            success: false,
+            code: 'TERABOX_VERIFICATION_REQUIRED',
+            message: 'TeraBox verification is currently required. Please try again later.'
+          });
+        }
+
+        // ── TERABOX_RATE_LIMITED: code 102 / hit extra ──
+        if (errno === 102 || errmsg.includes('hit extra') || errmsg.includes('spam')) {
+          const retryAfter = (listData.data && listData.data.spam_expire_in) || 1500;
+          return res.status(429).json({
+            success: false,
+            code: 'TERABOX_RATE_LIMITED',
+            retry_after: retryAfter
+          });
+        }
+
+        // ── Password-protected ──
+        if (errno === -9 || errno === 2130 || errno === -2130) {
+          return res.status(400).json({ error: 'This link requires a password. Password-protected links are currently not supported.' });
+        }
+
+        // ── Not found ──
+        if (errno === 105 || errno === -6) {
+          return res.status(400).json({ error: 'Shared link not found or invalid. Please check the URL format.' });
+        }
+
+        // ── Generic fallback ──
+        return res.status(400).json({ error: `TeraBox API returned error code ${errno}. ${listData.errmsg || ''}` });
       }
-      return res.status(400).json({ error: errMsg });
+      return res.status(400).json({ error: 'Failed to parse the link. Please verify the URL or try again later.' });
     }
 
     let ndusToken = await getNdusToken();
@@ -688,6 +740,23 @@ export default async function handler(req, res) {
     const isFolderExpanded = !!listData._isFolderExpanded;
 
     const formattedList = await Promise.all((listData.list || []).map(async (file) => {
+      // ── PROTECTION 1: Adult content block ──
+      // Must happen BEFORE any dlink, stream, HLS, or token operations.
+      const isAdultRaw = file.is_adult;
+      if (isAdultRaw === 1 || isAdultRaw === '1' || Number(isAdultRaw) === 1) {
+        console.warn(`[Parse] Adult content detected (is_adult=${isAdultRaw}) for file: ${file.server_filename}. Blocking.`);
+        return {
+          name: file.server_filename || 'file',
+          size: file.size ? formatBytes(Number(file.size)) : 'Unknown',
+          thumbnail: '',
+          dlink: '',
+          stream_url: '',
+          status: 'content_restricted',
+          error_code: 'CONTENT_RESTRICTED',
+          error_message: 'This content cannot be streamed through this service.',
+        };
+      }
+
       const ext = file.server_filename?.split('.').pop()?.toLowerCase();
       const isVideo = ['mp4', 'webm', 'ogg', 'mkv', 'mov', 'avi', 'ts', 'wmv', '3gp', 'flv'].includes(ext);
       let streamUrl = '';
@@ -792,42 +861,59 @@ export default async function handler(req, res) {
               }
             }
 
-            // If streaming returns need verify, refresh token and retry (only if not already attempted)
-            if (streamData && streamData.errno === 400141 && !autoLoginAttempted) {
-              console.log('[Stream] share/streaming returned need verify. Refreshing token...');
-              const freshToken = await refreshNdusToken(app.params.whost);
-              autoLoginAttempted = true;
-              if (freshToken) {
-                ndusToken = freshToken;
-                app = new TeraBoxApp(ndusToken);
-                app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-                app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
-                app.params.whost = anonApp.params.whost;
-                app.params.uhost = anonApp.params.uhost;
+            // ── Stream error handling: 400310 = need verify_v2 → stop immediately, no retry ──
+            if (streamData && (streamData.errno === 400310 || String(streamData.errmsg || '').includes('verify_v2'))) {
+              console.warn('[Stream] errno=400310 need verify_v2. Stopping — no retry.');
+              streamUrl = '';
+            // ── 400141 = token expired → ONE single-flight refresh attempt ──
+            } else if (streamData && streamData.errno === 400141 && !autoLoginAttempted) {
+              console.log('[Stream] share/streaming returned 400141 need verify. Attempting single-flight token refresh...');
+              // Check cooldown BEFORE attempting refresh
+              if (Date.now() < autoLoginCooldownUntil) {
+                const remMin = Math.ceil((autoLoginCooldownUntil - Date.now()) / 60000);
+                console.warn(`[Stream] Cooldown active. Skipping refresh for ${remMin} more min.`);
+                streamUrl = '';
+              } else {
+                const freshToken = await refreshNdusToken(app.params.whost);
+                autoLoginAttempted = true; // Prevent any further refresh attempts for this file
+                if (freshToken) {
+                  ndusToken = freshToken;
+                  app = new TeraBoxApp(ndusToken);
+                  app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+                  app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
+                  app.params.whost = anonApp.params.whost;
+                  app.params.uhost = anonApp.params.uhost;
 
-                const retryRes = await fetch(debugStreamEndpoint, {
-                  signal: AbortSignal.timeout(3000),
-                  headers: {
-                    'User-Agent': app.params.ua,
-                    'Cookie': buildCookie(ndusToken, browserId),
-                    'Referer': `https://www.${app.TERABOX_DOMAIN}/`
-                  }
-                });
-                
-                const retryContentType = retryRes.headers.get('content-type') || '';
-                if (retryContentType.includes('json')) {
-                  streamData = await retryRes.json();
-                } else {
-                  let retryText = await retryRes.text();
-                  if (retryText.startsWith('#EXTM3U')) {
-                    // Rewrite absolute CDN URLs to go through the local domain's download proxy to bypass CORS restrictions
-                    retryText = retryText.replace(/^(https?:\/\/[^\s\r\n]+)/gm, (match) => {
-                      return `${siteOrigin}/download.php?url=${encodeURIComponent(match)}&filename=segment.ts`;
-                    });
-                    streamUrl = 'data:application/x-mpegURL;base64,' + Buffer.from(retryText).toString('base64');
-                    streamData = { m3u8: streamUrl };
+                  const retryRes = await fetch(debugStreamEndpoint, {
+                    signal: AbortSignal.timeout(3000),
+                    headers: {
+                      'User-Agent': app.params.ua,
+                      'Cookie': buildCookie(ndusToken, browserId),
+                      'Referer': `https://www.${app.TERABOX_DOMAIN}/`
+                    }
+                  });
+
+                  const retryContentType = retryRes.headers.get('content-type') || '';
+                  if (retryContentType.includes('json')) {
+                    streamData = await retryRes.json();
+                    // If refresh itself returned a rate-limit, stop here
+                    if (streamData && (streamData.errno === 400310 || streamData.errno === 400141)) {
+                      console.warn(`[Stream] Retry returned errno=${streamData.errno}. Giving up.`);
+                      streamUrl = '';
+                      streamData = null;
+                    }
                   } else {
-                    streamData = { error: retryText };
+                    let retryText = await retryRes.text();
+                    if (retryText.startsWith('#EXTM3U')) {
+                      // Rewrite absolute CDN URLs to go through the local domain's download proxy to bypass CORS restrictions
+                      retryText = retryText.replace(/^(https?:\/\/[^\s\r\n]+)/gm, (match) => {
+                        return `${siteOrigin}/download.php?url=${encodeURIComponent(match)}&filename=segment.ts`;
+                      });
+                      streamUrl = 'data:application/x-mpegURL;base64,' + Buffer.from(retryText).toString('base64');
+                      streamData = { m3u8: streamUrl };
+                    } else {
+                      streamData = { error: retryText };
+                    }
                   }
                 }
               }
@@ -893,8 +979,14 @@ export default async function handler(req, res) {
       }
     };
 
-    // Save payload to MongoDB Cache (only if it has valid downloadable content)
-    const hasValidCdn = formattedList.some(item => item.status === 'ok' && item.dlink);
+    // Save payload to MongoDB Cache (only if it has valid downloadable content and no errors)
+    const hasValidCdn = formattedList.some(
+      item => item.status === 'ok' && item.dlink && 
+              item.error_code !== 'CONTENT_RESTRICTED' && 
+              item.error_code !== 'TERABOX_VERIFICATION_REQUIRED' &&
+              item.error_code !== 'TERABOX_RATE_LIMITED' &&
+              item.error_code !== 'SHARE_UNAVAILABLE'
+    );
     if (hasValidCdn) {
       try {
         await LinkCache.findOneAndUpdate(
