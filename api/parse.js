@@ -40,7 +40,17 @@ async function getNdusToken() {
 }
 
 // Function to refresh ndus token using credentials
+let autoLoginCooldownUntil = 0; // In-memory rate limit cooldown lock
+
+// Function to refresh ndus token using credentials
 export async function refreshNdusToken(whost) {
+  // Check if we are currently in cooldown to prevent spamming TeraBox and getting IP-blocked
+  if (Date.now() < autoLoginCooldownUntil) {
+    const remainingMin = Math.ceil((autoLoginCooldownUntil - Date.now()) / 60000);
+    console.log(`[NDUS Auto-Login] Ignored. Auto-login is on cooldown lock for another ${remainingMin} minutes due to rate-limiting.`);
+    return null;
+  }
+
   const email = process.env.TERABOX_EMAIL || process.env.TERABOX_USER;
   const password = process.env.TERABOX_PASSWORD || process.env.TERABOX_PASS;
   
@@ -82,6 +92,13 @@ export async function refreshNdusToken(whost) {
       return fullCookies;
     } else {
       console.error('[NDUS Auto-Login] Failed. Response:', JSON.stringify(loginRes));
+      
+      // Target verification / spam limit check to activate cooldown lock
+      if (loginRes.code === 102 || String(loginRes.msg).includes('extra') || String(loginRes.msg).includes('verify')) {
+        const timeoutSeconds = (loginRes.data && loginRes.data.spam_expire_in) || 1500;
+        console.warn(`[NDUS Auto-Login] TeraBox rate-limiting/spam lock detected! Locking logins for ${Math.ceil(timeoutSeconds / 60)} minutes.`);
+        autoLoginCooldownUntil = Date.now() + (timeoutSeconds * 1000);
+      }
     }
   } catch (loginErr) {
     console.error('[NDUS Auto-Login] Exception occurred:', loginErr.message);
@@ -511,15 +528,30 @@ export default async function handler(req, res) {
         try {
           let ndusData = await app.shortUrlList(strippedShortUrl);
           console.log(`[Parse] NDUS session response:`, JSON.stringify(ndusData));
-          
-          if (ndusData && (ndusData.errno === 400141 || ndusData.errno === 105 || ndusData.errno === -6 || ndusData.errno === 108)) {
+
+          // Failsafe: check if link is deleted or expired BEFORE checking token errors
+          const isLinkExpired = ndusData && (
+            ndusData.errno === 140 || ndusData.errno === -140 || 
+            ndusData.errno === 116 || ndusData.errno === 117 || 
+            ndusData.errno === 12 || ndusData.errno === 110 || 
+            ndusData.errno === -110 ||
+            String(ndusData.errmsg || '').toLowerCase().includes('delete') || 
+            String(ndusData.errmsg || '').toLowerCase().includes('expire') ||
+            String(ndusData.errmsg || '').toLowerCase().includes('not exist')
+          );
+
+          if (isLinkExpired) {
+            console.log(`[Parse] Link is expired or deleted. Skipping any token refresh attempts.`);
+            listData = ndusData; // Set so it exits directly with the correct expiration message
+          } else if (ndusData && ndusData.errno === 400141) {
+            // ONLY refresh if it's actually an authentication challenge and not already blocked
             if (!autoLoginAttempted) {
-              console.log('[Parse] NDUS token challenge/expiry detected. Attempting auto-login credentials refresh...');
+              console.log('[Parse] NDUS token challenge/expiry detected. Checking system config logs...');
+              // Rate limit check: fetch first to verify if database already contains a rate-limited token signature
               const freshToken = await refreshNdusToken(anonApp.params.whost);
               autoLoginAttempted = true;
               if (freshToken) {
                 ndusToken = freshToken;
-                console.log('[Parse] Using fresh token for retry, preview:', freshToken.substring(0, 20) + '...');
                 app = new TeraBoxApp(ndusToken);
                 app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
                 app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
@@ -536,7 +568,8 @@ export default async function handler(req, res) {
 
           if (ndusData && ndusData.errno === 0) {
             listData = ndusData;
-          } else if (ndusData && (ndusData.errno === 105 || ndusData.errno === -6 || ndusData.errno === 108 || ndusData.errno === 400141)) {
+          } else if (ndusData && !isLinkExpired) {
+            // Only trigger token expired alert if it's not a link-specific failure
             tokenExpiredDetected = true;
             console.warn(`[WARNING] TeraBox Premium Token (ndus) returned error code ${ndusData.errno}.`);
           }
