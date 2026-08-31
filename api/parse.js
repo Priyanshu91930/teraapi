@@ -1313,12 +1313,13 @@ export default async function handler(req, res) {
     };
 
     // ── ATOMIC TRIAL CONSUMPTION ─────────────────────────────────────────────
-    // If user is on a free trial plan and successfully resolved a premium video stream,
-    // consume 1 trial use atomically. If consumption fails (e.g. concurrent race condition),
-    // we revoke the stream URL and return PREMIUM_REQUIRED.
+    // Consume 1 trial ONLY if link resolution was 100% successful with valid download/stream content.
+    // If the link had an error, expired, or failed to resolve, NO quota is deducted.
     if (isPremium && entitlement.userType === 'free_trial') {
-      const hasResolvedStream = formattedList.some(item => item.stream_url && !item.stream_url.startsWith('ERROR'));
-      if (hasResolvedStream) {
+      const hasResolvedSuccess = formattedList.some(
+        item => item.status === 'ok' && (item.dlink || (item.stream_url && !item.stream_url.startsWith('ERROR')))
+      );
+      if (hasResolvedSuccess) {
         const success = await consumeFreeTrial(entitlement.userId);
         if (!success) {
           console.warn(`[Trial] Trial consumption failed for ${entitlement.userId} (trials exhausted). Revoking stream.`);
@@ -1333,6 +1334,8 @@ export default async function handler(req, res) {
         } else {
           entitlement.trialsRemaining -= 1;
         }
+      } else {
+        console.log(`[Trial] No valid content resolved for ${entitlement.userId}. Trial was NOT consumed.`);
       }
     }
     // ─────────────────────────────────────────────────────────────────────────
