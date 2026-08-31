@@ -543,28 +543,6 @@ export default async function handler(req, res) {
     }
   }
 
-  // ── ENTITLEMENT CHECK ─────────────────────────────────────────────────────
-  // Determine tier ONCE per request. This result gates premium TeraBox usage.
-  // Free = anonymous TeraBox only. Paid = premium NDUS + streaming.
-  // NEVER trust req.body.plan / req.body.premium / query params as proof.
-  const entitlement = await checkPremiumEntitlement(apiKey);
-  const isPremium = entitlement.isPremium;
-  console.log(`[ROUTER] apiKey=${apiKey ? apiKey.substring(0,8)+'...' : 'none'} entitlement=${isPremium ? 'paid('+entitlement.plan+')' : 'free('+entitlement.reason+')'}`);
-  
-  // Support x-user-tier header from Firebase Auth frontend
-  const tierHeader = req.headers['x-user-tier'];
-  if (tierHeader && (tierHeader === 'premium' || tierHeader === 'free')) {
-    // Override entitlement based on frontend header (for logged-in users)
-    if (tierHeader === 'premium') {
-      entitlement = { isPremium: true, plan: 'premium', userType: 'premium' };
-    } else {
-      entitlement = { isPremium: false, reason: 'free', userType: 'free', trialsRemaining: 3 };
-    }
-    isPremium = tierHeader === 'premium';
-    console.log(`[ROUTER] Using tier from header: ${tierHeader}`);
-  }
-  // ─────────────────────────────────────────────────────────────────────────
-
   const { url } = req.query;
 
   if (!url) {
@@ -744,17 +722,40 @@ export default async function handler(req, res) {
     // Always strip the leading '1' from the shortUrl because the /share/list API expects the raw surl token
     const strippedShortUrl = shortUrl.replace(/^1/, '');
 
-    // ─── CACHE CHECK ───
+    // ─── CACHE CHECK (Execute first to protect trials & prevent load) ───
     try {
       await connectToDatabase();
       const cachedRecord = await LinkCache.findOne({ shortUrl: strippedShortUrl });
       if (cachedRecord && cachedRecord.response) {
-        console.log(`[Cache Hit] Serving cached response for surl: ${strippedShortUrl}`);
+        console.log(`[Cache Hit] Serving cached response for surl: ${strippedShortUrl}. Trials will NOT be decremented.`);
         return res.status(200).json(cachedRecord.response);
       }
     } catch (cacheErr) {
       console.error('[Cache Read Error] Failed to read from cache:', cacheErr.message);
     }
+
+    // ── ENTITLEMENT CHECK (Only execute if cache misses) ──────────────────────
+    const entitlement = await checkPremiumEntitlement(apiKey);
+    let isPremium = entitlement.isPremium;
+    console.log(`[ROUTER] apiKey=${apiKey ? apiKey.substring(0,8)+'...' : 'none'} entitlement=${isPremium ? 'paid('+entitlement.plan+')' : 'free('+entitlement.reason+')'}`);
+    
+    // Support x-user-tier header from Firebase Auth frontend
+    const tierHeader = req.headers['x-user-tier'];
+    if (tierHeader && (tierHeader === 'premium' || tierHeader === 'free')) {
+      if (tierHeader === 'premium') {
+        entitlement.isPremium = true;
+        entitlement.plan = 'premium';
+        entitlement.userType = 'premium';
+      } else {
+        entitlement.isPremium = false;
+        entitlement.reason = 'free';
+        entitlement.userType = 'free';
+        entitlement.trialsRemaining = 3;
+      }
+      isPremium = tierHeader === 'premium';
+      console.log(`[ROUTER] Using tier from header: ${tierHeader}`);
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     let listData = null;
     let tokenExpiredDetected = false;
