@@ -419,8 +419,16 @@ async function resolveDlinkViaShareDownload(whost, sign, timestamp, shareId, uk,
       return j.dlink;
     }
     console.log(`[Parse] /share/download fallback failed: errno=${j && j.errno} errmsg=${j && j.errmsg}`);
+    
+    // Bubble up CAPTCHA verification required exception if triggered
+    if (j && (j.errno === 400310 || String(j.errmsg || '').includes('verify_v2'))) {
+      const vUrl = (j.data && (j.data.verify_url || j.data.verifyUrl)) || '';
+      throw { isCaptchaChallenge: true, verifyUrl: vUrl };
+    }
+    
     return '';
   } catch (e) {
+    if (e && e.isCaptchaChallenge) throw e; // Pass challenge up
     console.log('[Parse] /share/download fallback error:', e.message);
     return '';
   }
