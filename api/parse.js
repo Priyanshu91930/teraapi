@@ -1143,12 +1143,12 @@ export default async function handler(req, res) {
           let streamData;
           if (listData.share_id && listData.uk) {
             // Use the shared streaming endpoint which is optimized for shared links and pass sign/timestamp verification signatures along with the browserid session cookie
-            debugStreamEndpoint = `${app.params.whost}/share/streaming?app_id=250528&web=1&channel=dubian-wap&clienttype=0&path=${encodeURIComponent(file.path || '')}&fid=${file.fs_id || ''}&uk=${listData.uk}&shareid=${listData.share_id}&sign=${sign}&timestamp=${timestamp}&type=M3U8_AUTO_480&vip=2`;
+            debugStreamEndpoint = `${app.params.whost}/share/streaming?app_id=250528&web=1&channel=dubian-wap&clienttype=0&path=${encodeURIComponent(file.path || '')}&fid=${file.fs_id || ''}&uk=${listData.uk}&shareid=${listData.share_id}&sign=${sign}&timestamp=${timestamp}&type=M3U8_AUTO_480&vip=1`;
             const sRes = await fetch(debugStreamEndpoint, {
               signal: AbortSignal.timeout(3000),
               headers: {
-                'User-Agent': app.params.ua,
-                'Cookie': buildCookie(ndusToken, browserId),
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Cookie': `browserid=${browserId}; ndus=${ndusToken}`,
                 'Referer': `https://www.${app.TERABOX_DOMAIN}/`
               }
             });
