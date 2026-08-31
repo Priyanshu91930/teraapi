@@ -26,7 +26,7 @@ export default async function handler(req, res) {
 
         const protocol = req.headers['x-forwarded-proto'] || 'https';
         const host = req.headers.host;
-        const redirect_uri = `${protocol}://${host}/api/auth/google-callback`;
+        const redirect_uri = `${protocol}://${host}/auth/google-callback`;
 
         const returnState = req.query.state || '/';
         const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
@@ -60,7 +60,7 @@ export default async function handler(req, res) {
 
         const protocol = req.headers['x-forwarded-proto'] || 'https';
         const host = req.headers.host;
-        const redirect_uri = `${protocol}://${host}/api/auth/google-callback`;
+        const redirect_uri = `${protocol}://${host}/auth/google-callback`;
 
         try {
             const tokenUrl = 'https://oauth2.googleapis.com/token';
