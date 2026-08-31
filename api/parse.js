@@ -23,11 +23,8 @@ let proxyIndex = 0;
 
 // Helper to get next ProxyAgent in round-robin fashion
 function getNextProxyAgent() {
-  if (PROXIES_LIST.length === 0) return null;
-  const proxyUrl = PROXIES_LIST[proxyIndex];
-  proxyIndex = (proxyIndex + 1) % PROXIES_LIST.length;
-  console.log(`[Proxy Rotator] Routing request via proxy: ${proxyUrl.split('@')[1] || proxyUrl}`);
-  return new ProxyAgent(proxyUrl);
+  // Temporarily bypassed to prevent 402 Payment Required proxy errors
+  return null;
 }
 
 function formatBytes(bytes, decimals = 2) {
@@ -951,31 +948,7 @@ export default async function handler(req, res) {
           });
         }
 
-        // ── TERABOX_VERIFICATION_REQUIRED: 400141 or need verify ──
-        if (errno === 400141 || errmsg.includes('need verify') || errmsg.includes('verify_v2')) {
-          let vUrl = (listData.data && listData.data.verify_url) || (listData.data && listData.data.verifyUrl) || '';
-          if (!vUrl) {
-            vUrl = `/sharing/link?surl=${strippedShortUrl}`;
-          }
-          if (vUrl && !vUrl.startsWith('http')) {
-            vUrl = 'https://www.teraboxlink.com' + vUrl;
-          } else if (vUrl && vUrl.includes('1024terabox.com')) {
-            vUrl = vUrl.replace('1024terabox.com', 'teraboxlink.com');
-          }
-          // Convert direct verify to sharing/link to prevent api error
-          if (vUrl && vUrl.includes('/share/verify')) {
-            vUrl = vUrl.replace('/share/verify', '/sharing/link');
-          }
-          if (vUrl && !vUrl.includes('web=1')) {
-            vUrl += (vUrl.includes('?') ? '&' : '?') + 'web=1&clienttype=0';
-          }
-          return res.status(503).json({
-            success: false,
-            code: 'TERABOX_VERIFICATION_REQUIRED',
-            message: 'TeraBox verification is currently required. Please solve the captcha challenge.',
-            verify_url: vUrl
-          });
-        }
+        // CAPTCHA verification required block removed to prevent loops in India
 
         // ── TERABOX_RATE_LIMITED: code 102 / hit extra ──
         if (errno === 102 || errmsg.includes('hit extra') || errmsg.includes('spam')) {
@@ -1188,22 +1161,7 @@ export default async function handler(req, res) {
         }
       }
 
-      // If CAPTCHA challenge verify_v2 url was captured, return the verification required structure immediately
-      if (verifyV2Url || dlinkRecoveryFailed) {
-        let finalVerifyUrl = verifyV2Url || `/sharing/link?surl=${strippedShortUrl}`;
-        if (finalVerifyUrl && !finalVerifyUrl.startsWith('http')) {
-          finalVerifyUrl = 'https://www.teraboxlink.com' + finalVerifyUrl;
-        } else if (finalVerifyUrl && finalVerifyUrl.includes('1024terabox.com')) {
-          finalVerifyUrl = finalVerifyUrl.replace('1024terabox.com', 'teraboxlink.com');
-        }
-        if (finalVerifyUrl && finalVerifyUrl.includes('/share/verify')) {
-          finalVerifyUrl = finalVerifyUrl.replace('/share/verify', '/sharing/link');
-        }
-        if (finalVerifyUrl && !finalVerifyUrl.includes('web=1')) {
-          finalVerifyUrl += (finalVerifyUrl.includes('?') ? '&' : '?') + 'web=1&clienttype=0';
-        }
-        throw { isCaptchaChallenge: true, verifyUrl: finalVerifyUrl };
-      }
+      // CAPTCHA verification required block removed to prevent loops in India
 
       if (isVideo && ndusToken) {
         try {
