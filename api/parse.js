@@ -3,6 +3,32 @@ import ytdl from '@distube/ytdl-core';
 import { youtube, igdl, ttdl, fbdown } from 'btch-downloader';
 import { recordPageView, connectToDatabase, ApiSubscription, SystemConfig, LinkCache, User } from '../db.js';
 import { verifySessionToken } from './auth/me.js';
+import { ProxyAgent } from 'undici';
+
+// Rotating proxy servers list (with credentials)
+const PROXIES_LIST = [
+  'http://yyyjunpl:8pm364hileui@31.59.20.176:6754',
+  'http://yyyjunpl:8pm364hileui@45.38.107.97:6014',
+  'http://yyyjunpl:8pm364hileui@198.105.121.200:6462',
+  'http://yyyjunpl:8pm364hileui@64.137.96.74:6641',
+  'http://yyyjunpl:8pm364hileui@198.23.243.226:6361',
+  'http://yyyjunpl:8pm364hileui@38.154.185.97:6370',
+  'http://yyyjunpl:8pm364hileui@84.247.60.125:6095',
+  'http://yyyjunpl:8pm364hileui@142.111.67.146:5611',
+  'http://yyyjunpl:8pm364hileui@191.96.254.138:6185',
+  'http://yyyjunpl:8pm364hileui@31.58.9.4:6077'
+];
+
+let proxyIndex = 0;
+
+// Helper to get next ProxyAgent in round-robin fashion
+function getNextProxyAgent() {
+  if (PROXIES_LIST.length === 0) return null;
+  const proxyUrl = PROXIES_LIST[proxyIndex];
+  proxyIndex = (proxyIndex + 1) % PROXIES_LIST.length;
+  console.log(`[Proxy Rotator] Routing request via proxy: ${proxyUrl.split('@')[1] || proxyUrl}`);
+  return new ProxyAgent(proxyUrl);
+}
 
 function formatBytes(bytes, decimals = 2) {
   if (!bytes || isNaN(bytes)) return 'Unknown';
@@ -405,15 +431,21 @@ async function resolveDlinkViaShareDownload(whost, sign, timestamp, shareId, uk,
       nozip: '0',
       type: 'dlink',
     });
-    const res = await fetch(dlUrl, {
+    const { request } = await import('undici');
+    const proxyDispatcher = getNextProxyAgent();
+
+    const res = await request(dlUrl, {
+      method: 'GET',
       headers: {
         'User-Agent': TB_UA,
         'Referer': `${whost}/sharing/link?surl=`,
         'Cookie': cookie || `browserid=${Math.random().toString(36).substring(2)}`,
       },
-      signal: AbortSignal.timeout(3000),
+      dispatcher: proxyDispatcher || undefined,
+      signal: AbortSignal.timeout(5000),
     });
-    const j = await res.json();
+    
+    const j = await res.body.json();
     if (j && j.errno === 0 && j.dlink) {
       console.log('[Parse] dlink recovered via /share/download');
       return j.dlink;
@@ -1116,15 +1148,20 @@ export default async function handler(req, res) {
         });
         
         try {
-          const res = await fetch(dlUrl, {
+          const { request: uRequest } = await import('undici');
+          const proxyDispatcher = getNextProxyAgent();
+
+          const res = await uRequest(dlUrl, {
+            method: 'GET',
             headers: {
               'User-Agent': TB_UA,
               'Referer': `${anonApp.params.whost}/sharing/link?surl=`,
               'Cookie': sessionCookie,
             },
-            signal: AbortSignal.timeout(3000),
+            dispatcher: proxyDispatcher || undefined,
+            signal: AbortSignal.timeout(5000),
           });
-          const j = await res.json();
+          const j = await res.body.json();
           if (j && j.errno === 0 && j.dlink) {
             dlink = j.dlink;
           } else {
