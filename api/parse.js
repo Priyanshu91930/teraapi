@@ -1037,22 +1037,9 @@ export default async function handler(req, res) {
     const isFolderExpanded = !!listData._isFolderExpanded;
 
     const formattedList = await Promise.all((listData.list || []).map(async (file) => {
-      // ── PROTECTION 1: Adult content block ──
-      // Must happen BEFORE any dlink, stream, HLS, or token operations.
+      // ── PROTECTION 1: Adult content block (Bypassed) ──
+      // Bypassed: Allow all content to stream and download without restrictions
       const isAdultRaw = file.is_adult;
-      if (isAdultRaw === 1 || isAdultRaw === '1' || Number(isAdultRaw) === 1) {
-        console.warn(`[Parse] Adult content detected (is_adult=${isAdultRaw}) for file: ${file.server_filename}. Blocking.`);
-        return {
-          name: file.server_filename || 'file',
-          size: file.size ? formatBytes(Number(file.size)) : 'Unknown',
-          thumbnail: '',
-          dlink: '',
-          stream_url: '',
-          status: 'content_restricted',
-          error_code: 'CONTENT_RESTRICTED',
-          error_message: 'This content cannot be streamed through this service.',
-        };
-      }
 
       const ext = file.server_filename?.split('.').pop()?.toLowerCase();
       const isVideo = ['mp4', 'webm', 'ogg', 'mkv', 'mov', 'avi', 'ts', 'wmv', '3gp', 'flv'].includes(ext);
