@@ -912,10 +912,12 @@ export default async function handler(req, res) {
 
         // ── TERABOX_VERIFICATION_REQUIRED: 400141 or need verify ──
         if (errno === 400141 || errmsg.includes('need verify') || errmsg.includes('verify_v2')) {
+          const vUrl = (listData.data && listData.data.verify_url) || (listData.data && listData.data.verifyUrl) || '';
           return res.status(503).json({
             success: false,
             code: 'TERABOX_VERIFICATION_REQUIRED',
-            message: 'TeraBox verification is currently required. Please try again later.'
+            message: 'TeraBox verification is currently required. Please solve the captcha challenge.',
+            verify_url: vUrl
           });
         }
 
