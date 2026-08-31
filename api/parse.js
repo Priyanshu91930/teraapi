@@ -923,12 +923,15 @@ export default async function handler(req, res) {
         if (errno === 400141 || errmsg.includes('need verify') || errmsg.includes('verify_v2')) {
           let vUrl = (listData.data && listData.data.verify_url) || (listData.data && listData.data.verifyUrl) || '';
           if (!vUrl) {
-            vUrl = `/share/verify?surl=${strippedShortUrl}`;
+            vUrl = `/share/verify?surl=${strippedShortUrl}&web=1&clienttype=0`;
           }
           if (vUrl && !vUrl.startsWith('http')) {
             vUrl = 'https://www.teraboxlink.com' + vUrl;
           } else if (vUrl && vUrl.includes('1024terabox.com')) {
             vUrl = vUrl.replace('1024terabox.com', 'teraboxlink.com');
+          }
+          if (vUrl && !vUrl.includes('web=1')) {
+            vUrl += (vUrl.includes('?') ? '&' : '?') + 'web=1&clienttype=0';
           }
           return res.status(503).json({
             success: false,
@@ -1146,11 +1149,14 @@ export default async function handler(req, res) {
 
       // If CAPTCHA challenge verify_v2 url was captured, return the verification required structure immediately
       if (verifyV2Url || dlinkRecoveryFailed) {
-        let finalVerifyUrl = verifyV2Url || `/share/verify?surl=${strippedShortUrl}`;
+        let finalVerifyUrl = verifyV2Url || `/share/verify?surl=${strippedShortUrl}&web=1&clienttype=0`;
         if (finalVerifyUrl && !finalVerifyUrl.startsWith('http')) {
           finalVerifyUrl = 'https://www.teraboxlink.com' + finalVerifyUrl;
         } else if (finalVerifyUrl && finalVerifyUrl.includes('1024terabox.com')) {
           finalVerifyUrl = finalVerifyUrl.replace('1024terabox.com', 'teraboxlink.com');
+        }
+        if (finalVerifyUrl && !finalVerifyUrl.includes('web=1')) {
+          finalVerifyUrl += (finalVerifyUrl.includes('?') ? '&' : '?') + 'web=1&clienttype=0';
         }
         throw { isCaptchaChallenge: true, verifyUrl: finalVerifyUrl };
       }
