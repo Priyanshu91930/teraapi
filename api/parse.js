@@ -795,6 +795,22 @@ export default async function handler(req, res) {
       isPremium = tierHeader === 'premium';
       console.log(`[ROUTER] Using tier from header: ${tierHeader}`);
     }
+
+    // ── BLOCKED IF TRIALS EXHAUSTED OR PLAN EXPIRED ──
+    if (!isPremium && (entitlement.reason === 'trials_exhausted' || entitlement.reason === 'premium_expired')) {
+      const isExp = entitlement.reason === 'premium_expired';
+      console.log(`[ROUTER] Blocking user ${entitlement.userId || 'unknown'} due to ${entitlement.reason}`);
+      return res.status(403).json({
+        success: false,
+        code: isExp ? 'PREMIUM_EXPIRED' : 'DAILY_LIMIT_EXCEEDED',
+        error: isExp 
+          ? 'Your premium subscription has expired. Please renew your plan to continue.' 
+          : 'Daily free limit reached (3/3 used). Please upgrade to Premium for unlimited downloads.',
+        message: isExp 
+          ? 'Your premium subscription has expired. Please renew your plan to continue.' 
+          : 'Daily free limit reached (3/3 used). Please upgrade to Premium for unlimited downloads.'
+      });
+    }
     // ─────────────────────────────────────────────────────────────────────────
 
     let listData = null;
