@@ -796,8 +796,24 @@ export default async function handler(req, res) {
       console.log(`[ROUTER] Using tier from header: ${tierHeader}`);
     }
 
-    // ── BLOCKED IF TRIALS EXHAUSTED OR PLAN EXPIRED ──
-    if (!isPremium && (entitlement.reason === 'trials_exhausted' || entitlement.reason === 'premium_expired')) {
+    // ── ANDROID APP CLIENT DETECTION (UNLIMITED PARSING) ──
+    const isAppClient = (
+      req.query.from === 'app' || 
+      req.query.source === 'app' || 
+      req.headers['x-client-type'] === 'android_app' || 
+      req.headers['x-client-source'] === 'app'
+    );
+
+    if (isAppClient) {
+      isPremium = true;
+      entitlement.isPremium = true;
+      entitlement.plan = 'android_app';
+      entitlement.userType = 'app_user';
+      console.log('[ROUTER] Android App client detected. Premium NDUS routing enabled without 3-link daily limit restrictions.');
+    }
+
+    // ── BLOCKED IF TRIALS EXHAUSTED OR PLAN EXPIRED (WEBSITE USERS ONLY) ──
+    if (!isAppClient && !isPremium && (entitlement.reason === 'trials_exhausted' || entitlement.reason === 'premium_expired')) {
       const isExp = entitlement.reason === 'premium_expired';
       console.log(`[ROUTER] Blocking user ${entitlement.userId || 'unknown'} due to ${entitlement.reason}`);
       return res.status(403).json({
