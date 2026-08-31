@@ -923,12 +923,16 @@ export default async function handler(req, res) {
         if (errno === 400141 || errmsg.includes('need verify') || errmsg.includes('verify_v2')) {
           let vUrl = (listData.data && listData.data.verify_url) || (listData.data && listData.data.verifyUrl) || '';
           if (!vUrl) {
-            vUrl = `/share/verify?surl=${strippedShortUrl}&web=1&clienttype=0`;
+            vUrl = `/sharing/link?surl=${strippedShortUrl}`;
           }
           if (vUrl && !vUrl.startsWith('http')) {
             vUrl = 'https://www.teraboxlink.com' + vUrl;
           } else if (vUrl && vUrl.includes('1024terabox.com')) {
             vUrl = vUrl.replace('1024terabox.com', 'teraboxlink.com');
+          }
+          // Convert direct verify to sharing/link to prevent api error
+          if (vUrl && vUrl.includes('/share/verify')) {
+            vUrl = vUrl.replace('/share/verify', '/sharing/link');
           }
           if (vUrl && !vUrl.includes('web=1')) {
             vUrl += (vUrl.includes('?') ? '&' : '?') + 'web=1&clienttype=0';
@@ -1149,11 +1153,14 @@ export default async function handler(req, res) {
 
       // If CAPTCHA challenge verify_v2 url was captured, return the verification required structure immediately
       if (verifyV2Url || dlinkRecoveryFailed) {
-        let finalVerifyUrl = verifyV2Url || `/share/verify?surl=${strippedShortUrl}&web=1&clienttype=0`;
+        let finalVerifyUrl = verifyV2Url || `/sharing/link?surl=${strippedShortUrl}`;
         if (finalVerifyUrl && !finalVerifyUrl.startsWith('http')) {
           finalVerifyUrl = 'https://www.teraboxlink.com' + finalVerifyUrl;
         } else if (finalVerifyUrl && finalVerifyUrl.includes('1024terabox.com')) {
           finalVerifyUrl = finalVerifyUrl.replace('1024terabox.com', 'teraboxlink.com');
+        }
+        if (finalVerifyUrl && finalVerifyUrl.includes('/share/verify')) {
+          finalVerifyUrl = finalVerifyUrl.replace('/share/verify', '/sharing/link');
         }
         if (finalVerifyUrl && !finalVerifyUrl.includes('web=1')) {
           finalVerifyUrl += (finalVerifyUrl.includes('?') ? '&' : '?') + 'web=1&clienttype=0';
