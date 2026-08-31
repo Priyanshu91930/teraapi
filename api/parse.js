@@ -1067,10 +1067,11 @@ export default async function handler(req, res) {
 
       // Recover missing dlink via the signed /share/download endpoint
       // (share/list no longer returns dlink for many sessions)
+      // Only execute this recovery step if we have a premium ndusToken (since anonymous calls trigger verify_v2 captcha loop)
       let dlink = file.dlink || '';
       let verifyV2Url = '';
 
-      if (!dlink && sign && timestamp && listData.share_id && listData.uk && file.fs_id) {
+      if (!dlink && ndusToken && sign && timestamp && listData.share_id && listData.uk && file.fs_id) {
         const sessionCookie = buildCookie(ndusToken, browserId);
         
         // Fetch raw response to check for verify_url on failure
