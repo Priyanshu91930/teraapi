@@ -30,20 +30,20 @@ export default async function handler(req, res) {
     try {
         await connectToDatabase();
 
-        const payload = req.body.payload;
-        if (!payload || !payload.subscription) {
-            return res.status(200).json({ success: true, message: 'No subscription payload found' });
-        }
+        const payload = req.body.payload || {};
+        const entity = (payload.payment && payload.payment.entity) 
+            || (payload.order && payload.order.entity) 
+            || (payload.subscription && payload.subscription.entity) 
+            || {};
 
-        const subEntity = payload.subscription.entity;
-        const subscriptionId = subEntity.id;
-        const notes = subEntity.notes || {};
-        const email = (notes.email || subEntity.email || 'unknown@example.com').toLowerCase().trim();
+        const paymentId = entity.id || 'pay_' + Date.now();
+        const notes = entity.notes || {};
+        const email = (notes.email || entity.email || 'unknown@example.com').toLowerCase().trim();
         const plan = notes.plan || 'monthly';
 
         // ── IDEMPOTENCY CHECK ──────────────────────────────────────────────────
         // Prevent duplicate premium activations from repeated webhook deliveries
-        const paymentIdempotencyKey = `${subscriptionId}_${event}`;
+        const paymentIdempotencyKey = `${paymentId}_${event}`;
         const alreadyProcessed = await ProcessedPayment.findOne({ paymentId: paymentIdempotencyKey });
         if (alreadyProcessed) {
             console.log(`[Webhook] Idempotency: Event ${paymentIdempotencyKey} already processed. Skipping.`);
@@ -55,7 +55,7 @@ export default async function handler(req, res) {
         let requestLimit = 50000;
         if (plan === 'weekly') {
             requestLimit = 20000;
-        } else if (plan === 'yearly') {
+        } else if (plan === 'yearly' || plan === 'quarterly') {
             requestLimit = 100000;
         }
 
@@ -63,21 +63,23 @@ export default async function handler(req, res) {
         const expiresAt = new Date();
         if (plan === 'weekly') {
             expiresAt.setDate(expiresAt.getDate() + 7);
+        } else if (plan === 'quarterly') {
+            expiresAt.setDate(expiresAt.getDate() + 90);
         } else if (plan === 'yearly') {
             expiresAt.setFullYear(expiresAt.getFullYear() + 1);
         } else {
             expiresAt.setMonth(expiresAt.getMonth() + 1); // Default: monthly
         }
 
-        if (event === 'subscription.activated' || event === 'subscription.charged') {
-            // Generate a secure API Access Token for developer use
+        if (event === 'subscription.activated' || event === 'subscription.charged' || event === 'payment.captured' || event === 'order.paid') {
+            // Generate a secure API Access Token for user
             const token = 'tera_api_' + crypto.randomBytes(16).toString('hex');
 
-            // Upsert developer ApiSubscription
+            // Upsert ApiSubscription
             const subscription = await ApiSubscription.findOneAndUpdate(
-                { subscriptionId },
+                { email },
                 {
-                    $setOnInsert: { token }, // Only set token on creation
+                    $setOnInsert: { token, subscriptionId: paymentId },
                     $set: {
                         email,
                         plan,
@@ -108,14 +110,14 @@ export default async function handler(req, res) {
             await ProcessedPayment.create({
                 paymentId: paymentIdempotencyKey,
                 email,
-                amount: 0,
+                amount: entity.amount ? entity.amount / 100 : 0,
                 status: 'activated'
             });
 
-            console.log(`[Webhook] Activated subscription ${subscriptionId} for ${email}. Token: ${subscription.token}`);
+            console.log(`[Webhook] Activated ${plan} for ${email}. Token: ${subscription.token}`);
             return res.status(200).json({
                 success: true,
-                message: 'Subscription activated',
+                message: 'Payment processed and user upgraded',
                 token: subscription.token
             });
 
