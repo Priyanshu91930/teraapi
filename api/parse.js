@@ -535,6 +535,19 @@ export default async function handler(req, res) {
   const entitlement = await checkPremiumEntitlement(apiKey);
   const isPremium = entitlement.isPremium;
   console.log(`[ROUTER] apiKey=${apiKey ? apiKey.substring(0,8)+'...' : 'none'} entitlement=${isPremium ? 'paid('+entitlement.plan+')' : 'free('+entitlement.reason+')'}`);
+  
+  // Support x-user-tier header from Firebase Auth frontend
+  const tierHeader = req.headers['x-user-tier'];
+  if (tierHeader && (tierHeader === 'premium' || tierHeader === 'free')) {
+    // Override entitlement based on frontend header (for logged-in users)
+    if (tierHeader === 'premium') {
+      entitlement = { isPremium: true, plan: 'premium', userType: 'premium' };
+    } else {
+      entitlement = { isPremium: false, reason: 'free', userType: 'free', trialsRemaining: 3 };
+    }
+    isPremium = tierHeader === 'premium';
+    console.log(`[ROUTER] Using tier from header: ${tierHeader}`);
+  }
   // ─────────────────────────────────────────────────────────────────────────
 
   const { url } = req.query;
