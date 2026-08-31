@@ -922,6 +922,9 @@ export default async function handler(req, res) {
         // ── TERABOX_VERIFICATION_REQUIRED: 400141 or need verify ──
         if (errno === 400141 || errmsg.includes('need verify') || errmsg.includes('verify_v2')) {
           let vUrl = (listData.data && listData.data.verify_url) || (listData.data && listData.data.verifyUrl) || '';
+          if (!vUrl) {
+            vUrl = `/sharing/verify?surl=${strippedShortUrl}`;
+          }
           if (vUrl && !vUrl.startsWith('http')) {
             vUrl = 'https://www.1024terabox.com' + vUrl;
           }
@@ -1140,11 +1143,12 @@ export default async function handler(req, res) {
       }
 
       // If CAPTCHA challenge verify_v2 url was captured, return the verification required structure immediately
-      if (verifyV2Url) {
-        if (verifyV2Url && !verifyV2Url.startsWith('http')) {
-          verifyV2Url = 'https://www.1024terabox.com' + verifyV2Url;
+      if (verifyV2Url || dlinkRecoveryFailed) {
+        let finalVerifyUrl = verifyV2Url || `/sharing/verify?surl=${strippedShortUrl}`;
+        if (finalVerifyUrl && !finalVerifyUrl.startsWith('http')) {
+          finalVerifyUrl = 'https://www.1024terabox.com' + finalVerifyUrl;
         }
-        throw { isCaptchaChallenge: true, verifyUrl: verifyV2Url };
+        throw { isCaptchaChallenge: true, verifyUrl: finalVerifyUrl };
       }
 
       if (isVideo && ndusToken) {
