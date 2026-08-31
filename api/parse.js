@@ -1068,24 +1068,67 @@ export default async function handler(req, res) {
       // Recover missing dlink via the signed /share/download endpoint
       // (share/list no longer returns dlink for many sessions)
       let dlink = file.dlink || '';
+      let verifyV2Url = '';
+
       if (!dlink && sign && timestamp && listData.share_id && listData.uk && file.fs_id) {
         const sessionCookie = buildCookie(ndusToken, browserId);
-        dlink = await resolveDlinkViaShareDownload(
-          anonApp.params.whost, sign, timestamp,
-          listData.share_id || listData.shareid, listData.uk,
-          file.fs_id, sessionCookie
-        );
-        if (!dlink && ndusToken) {
-          console.log('[Parse] Premium dlink recovery failed with verification. Trying anonymous recovery...');
+        
+        // Fetch raw response to check for verify_url on failure
+        const dlUrl = new URL(`${anonApp.params.whost}/share/download`);
+        dlUrl.search = new URLSearchParams({
+          app_id: '250528',
+          web: '1',
+          channel: 'dubian-wap',
+          clienttype: '0',
+          shareid: String(listData.share_id || listData.shareid),
+          uk: String(listData.uk),
+          fid_list: JSON.stringify([file.fs_id]),
+          sign: sign || '',
+          timestamp: String(timestamp || ''),
+          product: 'share',
+          nozip: '0',
+          type: 'dlink',
+        });
+        
+        try {
+          const res = await fetch(dlUrl, {
+            headers: {
+              'User-Agent': TB_UA,
+              'Referer': `${anonApp.params.whost}/sharing/link?surl=`,
+              'Cookie': sessionCookie,
+            },
+            signal: AbortSignal.timeout(3000),
+          });
+          const j = await res.json();
+          if (j && j.errno === 0 && j.dlink) {
+            dlink = j.dlink;
+          } else {
+            console.log(`[Parse] /share/download fallback failed: errno=${j && j.errno}`);
+            if (j && (j.errno === 400310 || String(j.errmsg || '').includes('verify_v2'))) {
+              verifyV2Url = (j.data && (j.data.verify_url || j.data.verifyUrl)) || '';
+            }
+          }
+        } catch (e) {
+          console.log('[Parse] /share/download fallback fetch error:', e.message);
+        }
+
+        if (!dlink && ndusToken && !verifyV2Url) {
+          console.log('[Parse] Premium dlink recovery failed. Trying anonymous recovery...');
           dlink = await resolveDlinkViaShareDownload(
             anonApp.params.whost, sign, timestamp,
             listData.share_id || listData.shareid, listData.uk,
             file.fs_id, `browserid=${browserId}`
           );
         }
+        
         if (!dlink && ndusToken) {
           dlinkRecoveryFailed = true;
         }
+      }
+
+      // If CAPTCHA challenge verify_v2 url was captured, return the verification required structure immediately
+      if (verifyV2Url) {
+        throw { isCaptchaChallenge: true, verifyUrl: verifyV2Url };
       }
 
       if (isVideo && ndusToken) {
@@ -1292,6 +1335,14 @@ export default async function handler(req, res) {
 
     return res.status(200).json(payload);
   } catch (error) {
+    if (error && error.isCaptchaChallenge) {
+      return res.status(503).json({
+        success: false,
+        code: 'TERABOX_VERIFICATION_REQUIRED',
+        message: 'TeraBox verification is currently required. Please solve the captcha challenge.',
+        verify_url: error.verifyUrl
+      });
+    }
     return res.status(500).json({
       error: error.message || "Failed to resolve link. Please verify the URL and try again.",
     });
