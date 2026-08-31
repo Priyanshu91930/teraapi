@@ -184,7 +184,15 @@ async function fetchAnonShareList(shortUrl) {
 // subscription. Returns { isPremium: true, userId: email } or { isPremium: false }.
 // The master API_KEY (used by the website) is treated as FREE tier.
 // Only verified Razorpay-activated ApiSubscription tokens are PAID tier.
-async function checkPremiumEntitlement(apiKey) {
+async function checkPremiumEntitlement(apiKey, req) {
+  const clientType = req && req.headers ? (req.headers['x-client-type'] || req.headers['x-client-source']) : '';
+  
+  // Android App client gets full NDUS premium access without daily trial limit
+  if (clientType === 'android_app' || clientType === 'app') {
+    console.log('[Entitlement] Android App client detected. Granting full NDUS stream access.');
+    return { isPremium: true, userId: 'android_app_client', plan: 'unlimited_app', userType: 'android_app' };
+  }
+
   if (!apiKey) {
     console.log('[Entitlement] No API Key provided');
     return { isPremium: false, reason: 'unauthenticated' };
@@ -767,8 +775,16 @@ export default async function handler(req, res) {
       await connectToDatabase();
       const cachedRecord = await LinkCache.findOne({ shortUrl: strippedShortUrl });
       if (cachedRecord && cachedRecord.response) {
-        console.log(`[Cache Hit] Serving cached response for surl: ${strippedShortUrl}. Trials will NOT be decremented.`);
-        return res.status(200).json(cachedRecord.response);
+        const cacheAgeMs = cachedRecord.createdAt ? (Date.now() - new Date(cachedRecord.createdAt).getTime()) : 99999999;
+        // TeraBox direct links expire on TeraBox CDN after 1 hour (3600s).
+        // Only serve cache if fresh (< 45 minutes old).
+        if (cacheAgeMs < 45 * 60 * 1000) {
+          console.log(`[Cache Hit] Serving fresh cached response (${Math.round(cacheAgeMs/60000)}m old) for surl: ${strippedShortUrl}`);
+          return res.status(200).json(cachedRecord.response);
+        } else {
+          console.log(`[Cache Expired] Purging stale cached response (${Math.round(cacheAgeMs/60000)}m old) for surl: ${strippedShortUrl}`);
+          await LinkCache.deleteOne({ shortUrl: strippedShortUrl });
+        }
       }
     } catch (cacheErr) {
       console.error('[Cache Read Error] Failed to read from cache:', cacheErr.message);
