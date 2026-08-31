@@ -492,7 +492,10 @@ export default async function handler(req, res) {
   const apiKey = req.headers['x-api-key'] || req.query.apiKey;
   const expectedKey = process.env.API_KEY;
 
-  if (apiKey !== expectedKey) {
+  // Verify if it is a Google Auth session token first
+  const isGoogleSession = verifySessionToken(apiKey);
+
+  if (apiKey !== expectedKey && !isGoogleSession) {
     if (!apiKey) {
       return res.status(403).json({ error: "Access denied. Missing API key." });
     }
