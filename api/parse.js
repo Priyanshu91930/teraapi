@@ -921,7 +921,10 @@ export default async function handler(req, res) {
 
         // ── TERABOX_VERIFICATION_REQUIRED: 400141 or need verify ──
         if (errno === 400141 || errmsg.includes('need verify') || errmsg.includes('verify_v2')) {
-          const vUrl = (listData.data && listData.data.verify_url) || (listData.data && listData.data.verifyUrl) || '';
+          let vUrl = (listData.data && listData.data.verify_url) || (listData.data && listData.data.verifyUrl) || '';
+          if (vUrl && !vUrl.startsWith('http')) {
+            vUrl = 'https://www.1024terabox.com' + vUrl;
+          }
           return res.status(503).json({
             success: false,
             code: 'TERABOX_VERIFICATION_REQUIRED',
@@ -1138,6 +1141,9 @@ export default async function handler(req, res) {
 
       // If CAPTCHA challenge verify_v2 url was captured, return the verification required structure immediately
       if (verifyV2Url) {
+        if (verifyV2Url && !verifyV2Url.startsWith('http')) {
+          verifyV2Url = 'https://www.1024terabox.com' + verifyV2Url;
+        }
         throw { isCaptchaChallenge: true, verifyUrl: verifyV2Url };
       }
 
