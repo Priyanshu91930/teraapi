@@ -1040,6 +1040,9 @@ export default async function handler(req, res) {
       // ── PROTECTION 1: Adult content block (Bypassed) ──
       // Bypassed: Allow all content to stream and download without restrictions
       const isAdultRaw = file.is_adult;
+      if (isAdultRaw === 1 || isAdultRaw === '1' || Number(isAdultRaw) === 1) {
+        console.log(`[Parse] Adult content detected (is_adult=1) for file: ${file.server_filename}. Bypass active, allowing stream & download.`);
+      }
 
       const ext = file.server_filename?.split('.').pop()?.toLowerCase();
       const isVideo = ['mp4', 'webm', 'ogg', 'mkv', 'mov', 'avi', 'ts', 'wmv', '3gp', 'flv'].includes(ext);
