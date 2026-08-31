@@ -160,25 +160,33 @@ async function fetchAnonShareList(shortUrl) {
 // Only verified Razorpay-activated ApiSubscription tokens are PAID tier.
 async function checkPremiumEntitlement(apiKey) {
   if (!apiKey) {
+    console.log('[Entitlement] No API Key provided');
     return { isPremium: false, reason: 'unauthenticated' };
   }
 
   // Master API key check (free/anonymous website access)
   if (apiKey === process.env.API_KEY) {
+    console.log('[Entitlement] Master API Key detected');
     return { isPremium: false, reason: 'master_key' };
   }
 
   try {
     await connectToDatabase();
+    console.log('[Entitlement] Database connected. Parsing token...');
 
     // 1. Google Auth Stateless Session Token Check
     const decoded = verifySessionToken(apiKey);
     if (decoded && decoded.email) {
       const email = decoded.email.toLowerCase().trim();
+      console.log(`[Entitlement] Decoded Google token: email=${email}, role=${decoded.role}`);
+      
       const user = await User.findOne({ email });
       if (!user) {
+        console.log(`[Entitlement] Google user not found in DB: ${email}`);
         return { isPremium: false, reason: 'user_not_found' };
       }
+
+      console.log(`[Entitlement] User match: premiumStatus=${user.premiumStatus}, usesRemaining=${user.freePremiumUsesRemaining}`);
 
       // Check if user is active Premium
       const isPremiumUser = user.premiumStatus === 'premium' || user.plan === 'premium';
@@ -202,11 +210,14 @@ async function checkPremiumEntitlement(apiKey) {
       }
 
       return { isPremium: false, reason: 'trials_exhausted', userType: 'free_trial', trialsRemaining: 0 };
+    } else {
+      console.log('[Entitlement] Token failed to decode via verifySessionToken');
     }
 
     // 2. Developer Subscription Token Check (Backward Compatibility)
     const sub = await ApiSubscription.findOne({ token: apiKey });
     if (sub) {
+      console.log(`[Entitlement] Match Developer subscription token: status=${sub.status}`);
       if (sub.status !== 'active') return { isPremium: false, reason: 'inactive', status: sub.status };
       if (sub.expiresAt && new Date(sub.expiresAt) < new Date()) {
         sub.status = 'expired';
@@ -216,9 +227,10 @@ async function checkPremiumEntitlement(apiKey) {
       return { isPremium: true, userId: sub.email, plan: sub.plan, userType: 'developer' };
     }
 
+    console.log('[Entitlement] Token is neither Google session nor developer subscription');
     return { isPremium: false, reason: 'invalid_token' };
   } catch (err) {
-    console.error('[Entitlement] Verification failed:', err.message);
+    console.error('[Entitlement] Verification failed with exception:', err.message);
     return { isPremium: false, reason: 'db_error' };
   }
 }
