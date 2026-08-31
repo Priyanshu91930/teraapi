@@ -161,21 +161,14 @@ export default async function handler(req, res) {
                 return res.status(404).json({ error: 'User not found.' });
             }
 
-            let subscription = await ApiSubscription.findOne({ email: user.email, status: 'active' });
-            if (user.role === 'admin') {
-                if (!subscription) {
-                    subscription = {
-                        plan: 'yearly',
-                        token: process.env.API_KEY,
-                        status: 'active',
-                        requestLimit: 1000000,
-                        requestCount: 0,
-                        expiresAt: new Date(Date.now() + 315360000000)
-                    };
-                } else {
-                    subscription.requestLimit = 1000000;
-                }
-            }
+            const isPremiumUser = user.premiumStatus === 'premium' || (user.plan && user.plan !== 'free') || user.role === 'admin';
+            const isExpired = user.premiumExpiresAt && new Date(user.premiumExpiresAt) < new Date();
+
+            const subscription = (isPremiumUser && !isExpired) ? {
+                plan: user.plan || (user.role === 'admin' ? 'yearly' : 'premium'),
+                status: 'active',
+                expiresAt: user.premiumExpiresAt || (user.role === 'admin' ? new Date(Date.now() + 315360000000) : null)
+            } : null;
 
             return res.status(200).json({
                 success: true,
@@ -190,14 +183,7 @@ export default async function handler(req, res) {
                     premiumExpiresAt: user.premiumExpiresAt || null,
                     createdAt: user.createdAt
                 },
-                subscription: subscription ? {
-                    plan: subscription.plan,
-                    token: subscription.token,
-                    status: subscription.status,
-                    requestLimit: subscription.requestLimit,
-                    requestCount: subscription.requestCount,
-                    expiresAt: subscription.expiresAt
-                } : null
+                subscription
             });
         } catch (err) {
             return res.status(500).json({ error: 'Internal Server Error' });

@@ -72,37 +72,15 @@ export default async function handler(req, res) {
         }
 
         if (event === 'subscription.activated' || event === 'subscription.charged' || event === 'payment.captured' || event === 'order.paid') {
-            // Generate a secure API Access Token for user
-            const token = 'tera_api_' + crypto.randomBytes(16).toString('hex');
-
-            // Upsert ApiSubscription
-            const subscription = await ApiSubscription.findOneAndUpdate(
-                { email },
-                {
-                    $setOnInsert: { token, subscriptionId: paymentId },
-                    $set: {
-                        email,
-                        plan,
-                        status: 'active',
-                        requestLimit,
-                        expiresAt,
-                        lastReset: new Date()
-                    }
-                },
-                { upsert: true, returnDocument: 'after' }
-            );
-
-            // ── GOOGLE USER PREMIUM UPGRADE ────────────────────────────────────
-            // If the email matches a Google Auth user, upgrade their premium status
-            // in the User collection so website premium features unlock immediately.
-            const googleUser = await User.findOne({ email });
-            if (googleUser) {
-                googleUser.plan = plan;
-                googleUser.premiumStatus = 'premium';
-                googleUser.premiumExpiresAt = expiresAt;
-                googleUser.updatedAt = new Date();
-                await googleUser.save();
-                console.log(`[Webhook] Google user ${email} upgraded to premium(${plan}) until ${expiresAt.toISOString()}`);
+            // ── USER PREMIUM UPGRADE ──────────────────────────────────────────
+            const user = await User.findOne({ email });
+            if (user) {
+                user.plan = plan;
+                user.premiumStatus = 'premium';
+                user.premiumExpiresAt = expiresAt;
+                user.updatedAt = new Date();
+                await user.save();
+                console.log(`[Webhook] User ${email} upgraded to premium(${plan}) until ${expiresAt.toISOString()}`);
             }
             // ──────────────────────────────────────────────────────────────────
 
@@ -114,28 +92,21 @@ export default async function handler(req, res) {
                 status: 'activated'
             });
 
-            console.log(`[Webhook] Activated ${plan} for ${email}. Token: ${subscription.token}`);
+            console.log(`[Webhook] Activated ${plan} for ${email}`);
             return res.status(200).json({
                 success: true,
-                message: 'Payment processed and user upgraded',
-                token: subscription.token
+                message: 'Payment processed and user upgraded successfully'
             });
 
         } else if (event === 'subscription.cancelled' || event === 'subscription.halted') {
-            // Disable developer API token
-            await ApiSubscription.updateOne(
-                { subscriptionId },
-                { $set: { status: 'cancelled' } }
-            );
-
-            // Downgrade Google user premium status when subscription cancelled
-            const googleUser = await User.findOne({ email });
-            if (googleUser && googleUser.premiumStatus === 'premium') {
-                googleUser.plan = 'free';
-                googleUser.premiumStatus = 'free';
-                googleUser.updatedAt = new Date();
-                await googleUser.save();
-                console.log(`[Webhook] Google user ${email} downgraded to free (subscription cancelled).`);
+            // Downgrade user premium status when subscription cancelled
+            const user = await User.findOne({ email });
+            if (user && user.premiumStatus === 'premium') {
+                user.plan = 'free';
+                user.premiumStatus = 'free';
+                user.updatedAt = new Date();
+                await user.save();
+                console.log(`[Webhook] User ${email} downgraded to free.`);
             }
 
             // Log processed event for idempotency
@@ -146,8 +117,8 @@ export default async function handler(req, res) {
                 status: 'cancelled'
             });
 
-            console.log(`[Webhook] Cancelled subscription ${subscriptionId} for ${email}`);
-            return res.status(200).json({ success: true, message: 'Subscription cancelled' });
+            console.log(`[Webhook] Cancelled payment/plan for ${email}`);
+            return res.status(200).json({ success: true, message: 'Plan cancelled' });
         }
 
         return res.status(200).json({ success: true, message: 'Unhandled event type' });
