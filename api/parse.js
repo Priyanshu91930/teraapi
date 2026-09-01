@@ -1059,30 +1059,23 @@ export default async function handler(req, res) {
       console.error('[Parse] Failed to fetch shortUrlInfo metadata:', infoErr.message);
     }
 
-    // If any items are directories (folders), recursively fetch files inside them (parallel)
+    // Block folder links and links with multiple files
     if (listData && Array.isArray(listData.list)) {
       const topDirs = listData.list.filter(f => Number(f.isdir) === 1);
-      const topFiles = listData.list.filter(f => Number(f.isdir) !== 1);
+      const isMultipleFiles = listData.list.length > 1 || topDirs.length > 0;
 
-      if (topDirs.length > 0) {
-        console.log(`[Parse] Found ${topDirs.length} top-level director(ies). Fetching in parallel...`);
-        const dirResults = await Promise.all(
-          topDirs.map(dir => {
-            console.log(`[Parse] Fetching dir: ${dir.server_filename}`);
-            return fetchFolderFiles(
-              premiumApp || anonApp, `1${strippedShortUrl}`, dir.path,
-              listData.share_id || listData.shareid, listData.uk,
-              browserId, ndusToken, 0
-            );
-          })
-        );
-        listData.list = topFiles.concat(...dirResults);
-        console.log(`[Parse] Total files after folder expansion: ${listData.list.length}`);
-        listData._isFolderExpanded = true; // Flag to skip heavy per-file processing
+      if (isMultipleFiles) {
+        console.log(`[Parse] Link contains a folder or multiple files (${listData.list.length} items, ${topDirs.length} dirs). Rejecting request without trial deduction.`);
+        return res.status(400).json({
+          success: false,
+          code: 'MULTIPLE_FILES_NOT_ALLOWED',
+          error: 'This link contains multiple files or a folder. Please provide a link with a single file.',
+          message: 'This link contains multiple files or a folder. Please provide a link with a single file.'
+        });
       }
     }
 
-    const isFolderExpanded = !!listData._isFolderExpanded;
+    const isFolderExpanded = false;
 
     const formattedList = await Promise.all((listData.list || []).map(async (file) => {
       // ── PROTECTION 1: Adult content block (Bypassed) ──
