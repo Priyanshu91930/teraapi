@@ -1,4 +1,5 @@
 import { connectToDatabase, User, ApiSubscription } from '../../db.js';
+import { checkAndResetDailyTrials } from '../parse.js';
 import crypto from 'node:crypto';
 
 // Verify stateless token signature
@@ -53,10 +54,12 @@ export default async function handler(req, res) {
     try {
         await connectToDatabase();
 
-        const user = await User.findOne({ email: decoded.email });
+        let user = await User.findOne({ email: decoded.email });
         if (!user) {
             return res.status(404).json({ error: 'User not found.' });
         }
+
+        user = await checkAndResetDailyTrials(user);
 
         // Build active subscription details directly from User document
         const isPremiumUser = user.premiumStatus === 'premium' || (user.plan && user.plan !== 'free') || user.role === 'admin';

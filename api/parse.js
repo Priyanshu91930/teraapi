@@ -179,6 +179,25 @@ async function fetchAnonShareList(shortUrl) {
 }
 
 
+// Helper to reset free 3 daily trials if a new day has started
+export async function checkAndResetDailyTrials(user) {
+  if (!user) return user;
+  const now = new Date();
+  const lastReset = user.lastTrialReset ? new Date(user.lastTrialReset) : new Date(0);
+
+  const isNewDay = now.getUTCFullYear() !== lastReset.getUTCFullYear() ||
+                    now.getUTCMonth() !== lastReset.getUTCMonth() ||
+                    now.getUTCDate() !== lastReset.getUTCDate();
+
+  if (isNewDay) {
+    console.log(`[Daily Reset] Resetting 3 free trials for ${user.email}. Previous remaining: ${user.freePremiumUsesRemaining}`);
+    user.freePremiumUsesRemaining = 3;
+    user.lastTrialReset = now;
+    await user.save();
+  }
+  return user;
+}
+
 // ── TIER ROUTING ──────────────────────────────────────────────────────────────
 // Checks whether a given API key belongs to an active, non-expired paid
 // subscription. Returns { isPremium: true, userId: email } or { isPremium: false }.
@@ -214,11 +233,14 @@ async function checkPremiumEntitlement(apiKey, req) {
       const email = decoded.email.toLowerCase().trim();
       console.log(`[Entitlement] Decoded Google token: email=${email}, role=${decoded.role}`);
       
-      const user = await User.findOne({ email });
+      let user = await User.findOne({ email });
       if (!user) {
         console.log(`[Entitlement] Google user not found in DB: ${email}`);
         return { isPremium: false, reason: 'user_not_found' };
       }
+
+      // Check and reset daily 3 trials if a new day has started
+      user = await checkAndResetDailyTrials(user);
 
       console.log(`[Entitlement] User match: premiumStatus=${user.premiumStatus}, usesRemaining=${user.freePremiumUsesRemaining}`);
 
@@ -277,7 +299,10 @@ export async function consumeFreeTrial(email) {
     await connectToDatabase();
     const updatedUser = await User.findOneAndUpdate(
       { email: email.toLowerCase().trim(), freePremiumUsesRemaining: { $gt: 0 } },
-      { $inc: { freePremiumUsesRemaining: -1 } },
+      { 
+        $inc: { freePremiumUsesRemaining: -1 },
+        $push: { trialHistory: { usedAt: new Date() } }
+      },
       { new: true }
     );
     if (updatedUser) {

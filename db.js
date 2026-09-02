@@ -139,6 +139,8 @@ const AuthUserSchema = new mongoose.Schema({
   // Premium Status Fields
   plan: { type: String, default: 'free' }, // 'free', 'weekly', 'monthly', 'yearly'
   freePremiumUsesRemaining: { type: Number, default: 3 }, // 3 free premium uses for every user
+  lastTrialReset: { type: Date, default: Date.now }, // Timestamp of last daily 3-trial reset
+  trialHistory: [{ usedAt: { type: Date, default: Date.now } }], // Log of exact dates/times trials were used
   premiumStatus: { type: String, default: 'free' }, // 'free', 'premium', 'expired'
   premiumExpiresAt: { type: Date },
 
