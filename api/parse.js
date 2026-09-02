@@ -1419,7 +1419,7 @@ export default async function handler(req, res) {
         await LinkCache.findOneAndUpdate(
           { shortUrl: strippedShortUrl },
           { response: payload, createdAt: new Date() },
-          { upsert: true, new: true }
+          { upsert: true, returnDocument: 'after' }
         );
         console.log(`[Cache Save] Successfully cached resolved response for surl: ${strippedShortUrl}`);
       } catch (cacheErr) {
