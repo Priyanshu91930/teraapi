@@ -31,6 +31,17 @@ export async function connectToDatabase() {
   
   try {
     cached.conn = await cached.promise;
+    
+    // Global Migration: Instantly grant 3 free links to all existing users in MongoDB
+    User.updateMany(
+      { freePremiumUsesRemaining: { $lt: 3 }, premiumStatus: { $ne: 'premium' } },
+      { $set: { freePremiumUsesRemaining: 3, lastTrialReset: new Date() } }
+    ).then(res => {
+      if (res && res.modifiedCount > 0) {
+        console.log(`[DB Migration] Successfully granted 3 free trials to ${res.modifiedCount} existing users.`);
+      }
+    }).catch(err => console.error('[DB Migration Error]:', err.message));
+
   } catch (e) {
     cached.promise = null;
     throw e;
