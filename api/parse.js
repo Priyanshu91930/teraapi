@@ -1337,15 +1337,12 @@ export default async function handler(req, res) {
         }
       }
 
-      // Fallback stream_url to dlink for video files if HLS endpoint is unavailable so Watch Online button is always rendered
-      const finalStreamUrl = (streamUrl && !streamUrl.startsWith('ERROR')) ? streamUrl : dlink;
-
       return {
         name: file.server_filename || 'video.mp4',
         size: file.size ? formatBytes(Number(file.size)) : 'Unknown',
         thumbnail: file.thumbs?.url3 || file.thumbs?.url1 || '',
         dlink: dlink,
-        stream_url: isVideo ? finalStreamUrl : '',
+        stream_url: isVideo ? streamUrl : '',
         // Mark file as unavailable if both download and stream failed
         status: (!dlink && (!streamUrl || streamUrl.startsWith('ERROR:'))) ? 'unavailable' : 'ok',
         debug_sign: sign,
