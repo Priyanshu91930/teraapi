@@ -1232,8 +1232,8 @@ export default async function handler(req, res) {
 
           let streamData;
           if (listData.share_id && listData.uk) {
-            // Use the shared streaming endpoint with clienttype=1 and vip=2 for full unlimited video streaming duration (no 30s preview limit)
-            debugStreamEndpoint = `${app.params.whost}/share/streaming?app_id=250528&web=1&channel=dubian-wap&clienttype=1&path=${encodeURIComponent(file.path || '')}&fid=${file.fs_id || ''}&uk=${listData.uk}&shareid=${listData.share_id}&sign=${sign}&timestamp=${timestamp}&type=M3U8_AUTO_1080&vip=2`;
+            // Use the shared streaming endpoint for full HLS video streaming
+            debugStreamEndpoint = `${app.params.whost}/share/streaming?app_id=250528&web=1&channel=dubian-wap&clienttype=0&path=${encodeURIComponent(file.path || '')}&fid=${file.fs_id || ''}&uk=${listData.uk}&shareid=${listData.share_id}&sign=${sign}&timestamp=${timestamp}&type=M3U8_AUTO_720`;
             const sRes = await fetch(debugStreamEndpoint, {
               signal: AbortSignal.timeout(3000),
               headers: {
