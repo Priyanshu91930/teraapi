@@ -230,38 +230,48 @@ app.get('/parse', async (req, res) => {
     const strippedShortUrl = shortUrl.replace(/^1/, '');
 
     // Always use 1024terabox.com to prevent cookie stripping redirects on Vercel
-    const anonApp = new TeraBoxApp("");
-    anonApp.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-    anonApp.TERABOX_DOMAIN = '1024terabox.com';
-    anonApp.params.whost = 'https://www.1024terabox.com';
-    anonApp.params.uhost = 'https://c-all.1024terabox.com';
+    const TERA_DOMAIN = '1024terabox.com';
+    const TERA_HOST = 'https://www.' + TERA_DOMAIN;
+    const TERA_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-    let listData;
-    try {
-      listData = await anonApp.shortUrlList(strippedShortUrl);
-    } catch (e) {
-      // ignore
+    // Get NDUS token (premium) - ALWAYS try first for stream_url support
+    const ndusToken = process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
+
+    let listData = null;
+
+    // 1. PRIORITY: Try with NDUS (premium) first - this returns stream_url for VIP users
+    if (ndusToken) {
+      const app = new TeraBoxApp(ndusToken);
+      app.params.ua = TERA_UA;
+      app.TERABOX_DOMAIN = TERA_DOMAIN;
+      app.params.whost = TERA_HOST;
+      app.params.uhost = 'https://c-all.' + TERA_DOMAIN;
+
+      try {
+        listData = await app.shortUrlList(strippedShortUrl);
+        if (listData && listData.errno === 0 && listData.list && listData.list.length > 0) {
+          console.log(`[Parse] NDUS auth success. Files: ${listData.list.length}. Has stream_url: ${!!listData.list[0].stream_url}`);
+        } else {
+          listData = null; // reset to try anonymous
+        }
+      } catch (e) {
+        console.error('[Parse] NDUS shortUrlList failed:', e.message);
+        listData = null;
+      }
     }
 
-    // 2. If anonymous fails, returns error, or lacks a dlink (direct download link), fallback to logged-in NDUS session
-    const hasDlink = listData && listData.list && listData.list[0] && listData.list[0].dlink;
-    if (!listData || listData.errno !== 0 || !hasDlink) {
-      const ndusToken = process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
-      if (ndusToken) {
-        const app = new TeraBoxApp(ndusToken);
-        app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-        app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
-        app.params.whost = anonApp.params.whost;
-        app.params.uhost = anonApp.params.uhost;
+    // 2. Fallback: Try anonymous if NDUS failed or not available
+    if (!listData) {
+      const anonApp = new TeraBoxApp("");
+      anonApp.params.ua = TERA_UA;
+      anonApp.TERABOX_DOMAIN = TERA_DOMAIN;
+      anonApp.params.whost = TERA_HOST;
+      anonApp.params.uhost = 'https://c-all.' + TERA_DOMAIN;
 
-        try {
-          const ndusData = await app.shortUrlList(strippedShortUrl);
-          if (ndusData && ndusData.errno === 0) {
-            listData = ndusData;
-          }
-        } catch (e) {
-          // ignore
-        }
+      try {
+        listData = await anonApp.shortUrlList(strippedShortUrl);
+      } catch (e) {
+        console.error('[Parse] Anonymous shortUrlList failed:', e.message);
       }
     }
 
@@ -270,19 +280,48 @@ app.get('/parse', async (req, res) => {
       return res.status(400).json({ error: `TeraBox API returned error code ${errCode}` });
     }
 
-    const formattedList = (listData.list || []).map((file) => ({
-      name: file.server_filename || 'video.mp4',
-      size: file.size ? formatBytes(Number(file.size)) : 'Unknown',
-      thumbnail: file.thumbs?.url3 || file.thumbs?.url1 || '',
-      dlink: file.dlink || '',
+    // Try to fetch streaming URLs for video files from TeraBox streaming endpoint
+    const videoExts = ['mp4', 'mkv', 'avi', 'mov', 'webm', 'ts', 'm4v', 'flv', 'wmv', '3gp'];
+    const enrichedList = await Promise.all((listData.list || []).map(async (file) => {
+      const fileName = file.server_filename || '';
+      const ext = fileName.split('.').pop().toLowerCase();
+      const isVideo = videoExts.includes(ext);
+
+      let streamUrl = '';
+
+      // For video files with NDUS, try to get M3U8 streaming URL
+      if (isVideo && ndusToken && file.fs_id && file.shareid && file.uk && file.sign && file.timestamp) {
+        try {
+          const streamApp = new TeraBoxApp(ndusToken);
+          streamApp.params.ua = TERA_UA;
+          streamApp.TERABOX_DOMAIN = TERA_DOMAIN;
+          streamApp.params.whost = TERA_HOST;
+
+          const streamUrl_result = await streamApp.getStreamUrl(
+            file.fs_id, file.shareid, file.uk, file.sign, file.timestamp, strippedShortUrl
+          );
+          if (streamUrl_result) {
+            streamUrl = streamUrl_result;
+            console.log(`[Parse] Got stream_url for ${fileName}: ${streamUrl.substring(0, 80)}...`);
+          }
+        } catch (e) {
+          // Streaming URL not available for this file, use dlink fallback
+        }
+      }
+
+      return {
+        name: fileName || 'video.mp4',
+        size: file.size ? formatBytes(Number(file.size)) : 'Unknown',
+        thumbnail: file.thumbs?.url3 || file.thumbs?.url1 || '',
+        dlink: file.dlink || '',
+        stream_url: streamUrl || file.stream_url || '',
+      };
     }));
 
-    const ndusToken = process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
-
     return res.status(200).json({
-      list: formattedList,
+      list: enrichedList,
       downloadHeaders: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': TERA_UA,
         'Cookie': ndusToken ? `ndus=${ndusToken}` : ''
       }
     });

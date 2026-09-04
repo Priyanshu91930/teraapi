@@ -2665,6 +2665,86 @@ class TeraBoxApp {
     }
     
     /**
+     * Fetches M3U8 streaming URL from TeraBox streaming endpoint for video files
+     * @param {string} fsId - File system ID
+     * @param {string|number} shareId - Share ID
+     * @param {string|number} uk - User key (share owner)
+     * @param {string} sign - Signature from share list
+     * @param {string|number} timestamp - Timestamp from share list
+     * @param {string} shortUrl - The share short URL
+     * @returns {Promise<string>} The M3U8 streaming URL or empty string
+     * @async
+     */
+    async getStreamUrl(fsId, shareId, uk, sign, timestamp, shortUrl) {
+        try {
+            if(this.data.jsToken === ''){
+                await this.updateAppData();
+            }
+
+            const url = new URL(this.params.whost + '/share/download');
+            url.search = new URLSearchParams({
+                ...this.params.app,
+                jsToken: this.data.jsToken,
+                shareid: shareId,
+                uk: uk,
+                sign: sign,
+                timestamp: timestamp,
+                fs_id: fsId,
+                shorturl: '1' + shortUrl,
+                root: '1',
+            });
+
+            const connector = buildConnector({ ciphers: tls.DEFAULT_CIPHERS + ':!ECDHE-RSA-AES128-SHA' });
+            const client = new Client(this.params.whost, { connect: connector });
+            const req = await request(url, {
+                method: 'GET',
+                headers: {
+                    'User-Agent': this.params.ua,
+                    'Cookie': this.params.cookie,
+                },
+                dispatcher: client,
+                signal: AbortSignal.timeout(this.TERABOX_TIMEOUT),
+            });
+
+            if (req.statusCode !== 200) {
+                return '';
+            }
+
+            const rdata = await req.body.json();
+
+            // Check for streaming URLs in the response
+            if (rdata.urls && Array.isArray(rdata.urls)) {
+                // Find M3U8/HLS URL from the urls array
+                for (const item of rdata.urls) {
+                    const urlStr = item.url || item.dlink || '';
+                    if (urlStr && (urlStr.includes('.m3u8') || urlStr.includes('type=M3U8') || urlStr.includes('hls'))) {
+                        return urlStr;
+                    }
+                }
+                // If no M3U8 found, return first available URL
+                if (rdata.urls.length > 0 && rdata.urls[0].url) {
+                    return rdata.urls[0].url;
+                }
+            }
+
+            // Check for direct stream_url field
+            if (rdata.stream_url) {
+                return rdata.stream_url;
+            }
+
+            // Check for dlink that might be M3U8
+            if (rdata.dlink && (rdata.dlink.includes('.m3u8') || rdata.dlink.includes('hls'))) {
+                return rdata.dlink;
+            }
+
+            return '';
+        }
+        catch (error) {
+            return '';
+        }
+    }
+    
+    /**
      * Retrieves file difference (delta) information for synchronization
      * @returns {Promise<Object>} The file diff JSON (includes entries, request_id, has_more flag)
      * @async
