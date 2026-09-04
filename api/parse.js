@@ -1230,45 +1230,9 @@ export default async function handler(req, res) {
 
       // CAPTCHA verification required block removed to prevent loops in India
 
-      const streamNdusToken = ndusToken || (await getNdusToken());
-      if (isVideo && streamNdusToken) {
-        try {
-          let app = new TeraBoxApp(streamNdusToken);
-          app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-          app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
-          app.params.whost = anonApp.params.whost;
-          app.params.uhost = anonApp.params.uhost;
-
-          let streamData;
-          if (listData.share_id && listData.uk) {
-            // Use the shared streaming endpoint for full HLS video streaming
-            debugStreamEndpoint = `${app.params.whost}/share/streaming?app_id=250528&web=1&channel=dubian-wap&clienttype=0&path=${encodeURIComponent(file.path || '')}&fid=${file.fs_id || ''}&uk=${listData.uk}&shareid=${listData.share_id}&sign=${sign}&timestamp=${timestamp}&type=M3U8_AUTO_720`;
-            const b64Endpoint = Buffer.from(debugStreamEndpoint).toString('base64');
-            streamUrl = `${siteOrigin}/download.php?url=${encodeURIComponent(b64Endpoint)}&b64=1&type=m3u8`;
-          } else {
-            // Fallback to personal file stream endpoint
-            streamData = await app.getStream(file.path || file.server_filename || '', 'M3U8_AUTO_480');
-            if (streamData && (streamData.m3u8 || streamData.url)) {
-              const rawM = streamData.m3u8 || streamData.url;
-              const b64Endpoint = Buffer.from(rawM).toString('base64');
-              streamUrl = `${siteOrigin}/download.php?url=${encodeURIComponent(b64Endpoint)}&b64=1&type=m3u8`;
-            }
-          }
-
-          debugStreamData = streamData;
-
-          if (streamData && streamData.m3u8) {
-            streamUrl = streamData.m3u8;
-          } else if (streamData && streamData.result && streamData.result.m3u8) {
-            streamUrl = streamData.result.m3u8;
-          } else if (streamData && streamData.url) {
-            streamUrl = streamData.url;
-          }
-        } catch (streamErr) {
-          console.error('[Stream] Failed to resolve HLS stream:', streamErr.message);
-          streamUrl = 'ERROR: ' + streamErr.message;
-        }
-      }
+      // Stream URL removed — /share/streaming returns HTML pages, not actual M3U8.
+      // The dlink proxy through download.php is used for video playback instead.
+      streamUrl = '';
 
       return {
         name: file.server_filename || 'video.mp4',
