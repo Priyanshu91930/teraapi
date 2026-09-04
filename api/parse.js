@@ -1243,94 +1243,16 @@ export default async function handler(req, res) {
           if (listData.share_id && listData.uk) {
             // Use the shared streaming endpoint for full HLS video streaming
             debugStreamEndpoint = `${app.params.whost}/share/streaming?app_id=250528&web=1&channel=dubian-wap&clienttype=0&path=${encodeURIComponent(file.path || '')}&fid=${file.fs_id || ''}&uk=${listData.uk}&shareid=${listData.share_id}&sign=${sign}&timestamp=${timestamp}&type=M3U8_AUTO_720`;
-            const sRes = await fetch(debugStreamEndpoint, {
-              signal: AbortSignal.timeout(3000),
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Cookie': (streamNdusToken.includes('=') ? streamNdusToken : `browserid=${browserId}; ndus=${streamNdusToken}`),
-                'Referer': `https://www.${app.TERABOX_DOMAIN}/`
-              }
-            });
-            
-            const contentType = sRes.headers.get('content-type') || '';
-            if (contentType.includes('json')) {
-              streamData = await sRes.json();
-            } else {
-              let textContent = await sRes.text();
-              if (textContent.startsWith('#EXTM3U')) {
-                // Rewrite absolute CDN URLs to go through the local domain's download proxy to bypass CORS restrictions
-                textContent = textContent.replace(/^(https?:\/\/[^\s\r\n]+)/gm, (match) => {
-                  const b64 = Buffer.from(match).toString('base64');
-                  return `${siteOrigin}/download.php?url=${encodeURIComponent(b64)}&b64=1&filename=segment.ts`;
-                });
-                streamUrl = 'data:application/x-mpegURL;base64,' + Buffer.from(textContent).toString('base64');
-                streamData = { m3u8: streamUrl };
-              } else {
-                streamData = { error: textContent };
-              }
-            }
-
-            // ── Stream error handling: 400310 = need verify_v2 → stop immediately, no retry ──
-            if (streamData && (streamData.errno === 400310 || String(streamData.errmsg || '').includes('verify_v2'))) {
-              console.warn('[Stream] errno=400310 need verify_v2. Stopping — no retry.');
-              streamUrl = '';
-            // ── 400141 = token expired → ONE single-flight refresh attempt ──
-            } else if (streamData && streamData.errno === 400141 && !autoLoginAttempted) {
-              console.log('[Stream] share/streaming returned 400141 need verify. Attempting single-flight token refresh...');
-              // Check cooldown BEFORE attempting refresh
-              if (Date.now() < autoLoginCooldownUntil) {
-                const remMin = Math.ceil((autoLoginCooldownUntil - Date.now()) / 60000);
-                console.warn(`[Stream] Cooldown active. Skipping refresh for ${remMin} more min.`);
-                streamUrl = '';
-              } else {
-                const freshToken = await refreshNdusToken(app.params.whost);
-                autoLoginAttempted = true; // Prevent any further refresh attempts for this file
-                if (freshToken) {
-                  ndusToken = freshToken;
-                  app = new TeraBoxApp(ndusToken);
-                  app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-                  app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
-                  app.params.whost = anonApp.params.whost;
-                  app.params.uhost = anonApp.params.uhost;
-
-                  const retryRes = await fetch(debugStreamEndpoint, {
-                    signal: AbortSignal.timeout(3000),
-                    headers: {
-                      'User-Agent': app.params.ua,
-                      'Cookie': buildCookie(ndusToken, browserId),
-                      'Referer': `https://www.${app.TERABOX_DOMAIN}/`
-                    }
-                  });
-
-                  const retryContentType = retryRes.headers.get('content-type') || '';
-                  if (retryContentType.includes('json')) {
-                    streamData = await retryRes.json();
-                    // If refresh itself returned a rate-limit, stop here
-                    if (streamData && (streamData.errno === 400310 || streamData.errno === 400141)) {
-                      console.warn(`[Stream] Retry returned errno=${streamData.errno}. Giving up.`);
-                      streamUrl = '';
-                      streamData = null;
-                    }
-                  } else {
-                    let retryText = await retryRes.text();
-                    if (retryText.startsWith('#EXTM3U')) {
-                      // Rewrite absolute CDN URLs to go through the local domain's download proxy to bypass CORS restrictions
-                      retryText = retryText.replace(/^(https?:\/\/[^\s\r\n]+)/gm, (match) => {
-                        const b64 = Buffer.from(match).toString('base64');
-                        return `${siteOrigin}/download.php?url=${encodeURIComponent(b64)}&b64=1&filename=segment.ts`;
-                      });
-                      streamUrl = 'data:application/x-mpegURL;base64,' + Buffer.from(retryText).toString('base64');
-                      streamData = { m3u8: streamUrl };
-                    } else {
-                      streamData = { error: retryText };
-                    }
-                  }
-                }
-              }
-            }
+            const b64Endpoint = Buffer.from(debugStreamEndpoint).toString('base64');
+            streamUrl = `${siteOrigin}/download.php?url=${encodeURIComponent(b64Endpoint)}&b64=1&type=m3u8`;
           } else {
             // Fallback to personal file stream endpoint
             streamData = await app.getStream(file.path || file.server_filename || '', 'M3U8_AUTO_480');
+            if (streamData && (streamData.m3u8 || streamData.url)) {
+              const rawM = streamData.m3u8 || streamData.url;
+              const b64Endpoint = Buffer.from(rawM).toString('base64');
+              streamUrl = `${siteOrigin}/download.php?url=${encodeURIComponent(b64Endpoint)}&b64=1&type=m3u8`;
+            }
           }
 
           debugStreamData = streamData;
