@@ -1230,26 +1230,17 @@ export default async function handler(req, res) {
 
       // CAPTCHA verification required block removed to prevent loops in India
 
-      // Attempt to get M3U8 streaming URL for premium users
-      if (isVideo && premiumApp && ndusToken && file.fs_id && sign && timestamp) {
+      // Construct signed M3U8 streaming URL proxied via Hostinger download.php
+      if (isVideo && sign && timestamp && listData.uk && file.fs_id) {
         try {
-          console.log(`[Parse] Attempting M3U8 stream resolution for fs_id=${file.fs_id}...`);
-          streamUrl = await premiumApp.getStreamUrl(
-            file.fs_id,
-            listData.share_id || listData.shareid,
-            listData.uk,
-            sign,
-            timestamp,
-            strippedShortUrl
-          );
-          if (streamUrl) {
-            console.log(`[Parse] M3U8 stream URL resolved: ${streamUrl.substring(0, 100)}...`);
-            debugStreamEndpoint = 'getStreamUrl';
-          } else {
-            console.log('[Parse] No M3U8 stream URL found. Falling back to dlink proxy.');
-          }
+          const shareId = listData.share_id || listData.shareid || '';
+          const rawStreamingUrl = `${anonApp.params.whost}/share/streaming?app_id=250528&web=1&channel=dubian-wap&clienttype=0&path=${encodeURIComponent(file.path || '')}&fid=${file.fs_id}&uk=${listData.uk}&shareid=${shareId}&sign=${sign}&timestamp=${timestamp}&type=M3U8_AUTO_720`;
+          const b64Stream = Buffer.from(rawStreamingUrl).toString('base64');
+          streamUrl = `https://teraboxdownloader.co.in/download.php?url=${encodeURIComponent(b64Stream)}&b64=1&type=m3u8`;
+          debugStreamEndpoint = 'hostinger_m3u8_proxy';
+          console.log(`[Parse] M3U8 stream URL constructed: ${streamUrl.substring(0, 100)}...`);
         } catch (streamErr) {
-          console.error('[Parse] Stream URL resolution failed:', streamErr.message);
+          console.error('[Parse] Stream URL construction failed:', streamErr.message);
           streamUrl = '';
         }
       }
