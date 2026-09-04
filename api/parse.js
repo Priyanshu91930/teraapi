@@ -1247,7 +1247,7 @@ export default async function handler(req, res) {
               signal: AbortSignal.timeout(3000),
               headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Cookie': `browserid=${browserId}; ndus=${ndusToken}`,
+                'Cookie': (streamNdusToken.includes('=') ? streamNdusToken : `browserid=${browserId}; ndus=${streamNdusToken}`),
                 'Referer': `https://www.${app.TERABOX_DOMAIN}/`
               }
             });
@@ -1425,12 +1425,7 @@ export default async function handler(req, res) {
               item.error_code !== 'TERABOX_RATE_LIMITED' &&
               item.error_code !== 'SHARE_UNAVAILABLE'
     );
-    const hasMissingVideoStream = formattedList.some(item => {
-      const isVid = /\.(mp4|mkv|avi|mov|flv|webm|m4v)$/i.test(item.name || '');
-      return isVid && (!item.stream_url || item.stream_url.startsWith('ERROR'));
-    });
-
-    if (hasValidCdn && !hasMissingVideoStream) {
+    if (hasValidCdn) {
       try {
         await LinkCache.findOneAndUpdate(
           { shortUrl: strippedShortUrl },
