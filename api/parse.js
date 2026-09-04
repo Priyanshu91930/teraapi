@@ -811,7 +811,7 @@ export default async function handler(req, res) {
         if (shouldPurgeCache) {
           console.log(`[Cache Purge] Purging cached record with missing dlink for surl: ${strippedShortUrl}`);
           await LinkCache.deleteOne({ shortUrl: strippedShortUrl });
-        } else if (cacheAgeMs < 45 * 60 * 1000) {
+        } else if (cacheAgeMs < 10 * 60 * 1000) {
           console.log(`[Cache Hit] Serving fresh cached response (${Math.round(cacheAgeMs/60000)}m old) for surl: ${strippedShortUrl}`);
           return res.status(200).json(cachedRecord.response);
         } else {
