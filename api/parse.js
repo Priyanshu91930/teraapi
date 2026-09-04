@@ -802,9 +802,16 @@ export default async function handler(req, res) {
       const cachedRecord = await LinkCache.findOne({ shortUrl: strippedShortUrl });
       if (cachedRecord && cachedRecord.response) {
         const cacheAgeMs = cachedRecord.createdAt ? (Date.now() - new Date(cachedRecord.createdAt).getTime()) : 99999999;
-        // TeraBox direct links expire on TeraBox CDN after 1 hour (3600s).
-        // Only serve cache if fresh (< 45 minutes old).
-        if (cacheAgeMs < 45 * 60 * 1000) {
+        const cachedList = cachedRecord.response && cachedRecord.response.list ? cachedRecord.response.list : [];
+        const isMissingVideoStream = cachedList.some(item => {
+          const isVid = /\.(mp4|mkv|avi|mov|flv|webm|m4v)$/i.test(item.name || '');
+          return isVid && (!item.stream_url || item.stream_url.startsWith('ERROR'));
+        });
+
+        if (isMissingVideoStream) {
+          console.log(`[Cache Purge] Purging cached record with missing stream_url for surl: ${strippedShortUrl}`);
+          await LinkCache.deleteOne({ shortUrl: strippedShortUrl });
+        } else if (cacheAgeMs < 45 * 60 * 1000) {
           console.log(`[Cache Hit] Serving fresh cached response (${Math.round(cacheAgeMs/60000)}m old) for surl: ${strippedShortUrl}`);
           return res.status(200).json(cachedRecord.response);
         } else {
@@ -1223,9 +1230,10 @@ export default async function handler(req, res) {
 
       // CAPTCHA verification required block removed to prevent loops in India
 
-      if (isVideo && ndusToken) {
+      const streamNdusToken = ndusToken || (await getNdusToken());
+      if (isVideo && streamNdusToken) {
         try {
-          let app = new TeraBoxApp(ndusToken);
+          let app = new TeraBoxApp(streamNdusToken);
           app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
           app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
           app.params.whost = anonApp.params.whost;
@@ -1417,7 +1425,12 @@ export default async function handler(req, res) {
               item.error_code !== 'TERABOX_RATE_LIMITED' &&
               item.error_code !== 'SHARE_UNAVAILABLE'
     );
-    if (hasValidCdn) {
+    const hasMissingVideoStream = formattedList.some(item => {
+      const isVid = /\.(mp4|mkv|avi|mov|flv|webm|m4v)$/i.test(item.name || '');
+      return isVid && (!item.stream_url || item.stream_url.startsWith('ERROR'));
+    });
+
+    if (hasValidCdn && !hasMissingVideoStream) {
       try {
         await LinkCache.findOneAndUpdate(
           { shortUrl: strippedShortUrl },
