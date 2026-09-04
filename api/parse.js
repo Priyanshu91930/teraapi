@@ -1230,9 +1230,29 @@ export default async function handler(req, res) {
 
       // CAPTCHA verification required block removed to prevent loops in India
 
-      // Stream URL removed — /share/streaming returns HTML pages, not actual M3U8.
-      // The dlink proxy through download.php is used for video playback instead.
-      streamUrl = '';
+      // Attempt to get M3U8 streaming URL for premium users
+      if (isVideo && premiumApp && ndusToken && file.fs_id && sign && timestamp) {
+        try {
+          console.log(`[Parse] Attempting M3U8 stream resolution for fs_id=${file.fs_id}...`);
+          streamUrl = await premiumApp.getStreamUrl(
+            file.fs_id,
+            listData.share_id || listData.shareid,
+            listData.uk,
+            sign,
+            timestamp,
+            strippedShortUrl
+          );
+          if (streamUrl) {
+            console.log(`[Parse] M3U8 stream URL resolved: ${streamUrl.substring(0, 100)}...`);
+            debugStreamEndpoint = 'getStreamUrl';
+          } else {
+            console.log('[Parse] No M3U8 stream URL found. Falling back to dlink proxy.');
+          }
+        } catch (streamErr) {
+          console.error('[Parse] Stream URL resolution failed:', streamErr.message);
+          streamUrl = '';
+        }
+      }
 
       return {
         name: file.server_filename || 'video.mp4',

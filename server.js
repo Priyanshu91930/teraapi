@@ -287,6 +287,7 @@ app.get('/parse', async (req, res) => {
         size: file.size ? formatBytes(Number(file.size)) : 'Unknown',
         thumbnail: file.thumbs?.url3 || file.thumbs?.url1 || '',
         dlink: file.dlink || '',
+        stream_url: file.stream_url || '',
       })),
       downloadHeaders: {
         'User-Agent': TERA_UA,
