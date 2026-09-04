@@ -280,46 +280,14 @@ app.get('/parse', async (req, res) => {
       return res.status(400).json({ error: `TeraBox API returned error code ${errCode}` });
     }
 
-    // Try to fetch streaming URLs for video files from TeraBox streaming endpoint
-    const videoExts = ['mp4', 'mkv', 'avi', 'mov', 'webm', 'ts', 'm4v', 'flv', 'wmv', '3gp'];
-    const enrichedList = await Promise.all((listData.list || []).map(async (file) => {
-      const fileName = file.server_filename || '';
-      const ext = fileName.split('.').pop().toLowerCase();
-      const isVideo = videoExts.includes(ext);
-
-      let streamUrl = '';
-
-      // For video files with NDUS, try to get M3U8 streaming URL
-      if (isVideo && ndusToken && file.fs_id && file.shareid && file.uk && file.sign && file.timestamp) {
-        try {
-          const streamApp = new TeraBoxApp(ndusToken);
-          streamApp.params.ua = TERA_UA;
-          streamApp.TERABOX_DOMAIN = TERA_DOMAIN;
-          streamApp.params.whost = TERA_HOST;
-
-          const streamUrl_result = await streamApp.getStreamUrl(
-            file.fs_id, file.shareid, file.uk, file.sign, file.timestamp, strippedShortUrl
-          );
-          if (streamUrl_result) {
-            streamUrl = streamUrl_result;
-            console.log(`[Parse] Got stream_url for ${fileName}: ${streamUrl.substring(0, 80)}...`);
-          }
-        } catch (e) {
-          // Streaming URL not available for this file, use dlink fallback
-        }
-      }
-
-      return {
-        name: fileName || 'video.mp4',
+    // Return file list from TeraBox
+    return res.status(200).json({
+      list: (listData.list || []).map((file) => ({
+        name: file.server_filename || 'video.mp4',
         size: file.size ? formatBytes(Number(file.size)) : 'Unknown',
         thumbnail: file.thumbs?.url3 || file.thumbs?.url1 || '',
         dlink: file.dlink || '',
-        stream_url: streamUrl || file.stream_url || '',
-      };
-    }));
-
-    return res.status(200).json({
-      list: enrichedList,
+      })),
       downloadHeaders: {
         'User-Agent': TERA_UA,
         'Cookie': ndusToken ? `ndus=${ndusToken}` : ''
