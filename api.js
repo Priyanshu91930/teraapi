@@ -2666,7 +2666,6 @@ class TeraBoxApp {
     
     /**
      * Fetches M3U8 streaming URL from TeraBox streaming endpoint for video files
-     * Only returns ACTUAL .m3u8 file URLs, NOT /share/streaming or /share/download page URLs
      * @param {string} fsId - File system ID
      * @param {string|number} shareId - Share ID
      * @param {string|number} uk - User key (share owner)
