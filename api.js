@@ -2666,6 +2666,7 @@ class TeraBoxApp {
     
     /**
      * Fetches M3U8 streaming URL from TeraBox streaming endpoint for video files
+     * Only returns ACTUAL .m3u8 file URLs, NOT /share/streaming or /share/download page URLs
      * @param {string} fsId - File system ID
      * @param {string|number} shareId - Share ID
      * @param {string|number} uk - User key (share owner)
@@ -2712,28 +2713,32 @@ class TeraBoxApp {
 
             const rdata = await req.body.json();
 
+            // Helper: only accept actual M3U8 file URLs, reject streaming PAGE URLs
+            // /share/streaming and /share/download are HTML pages, not playable M3U8 files
+            const isValidStreamUrl = (urlStr) => {
+                if (!urlStr || typeof urlStr !== 'string') return false;
+                if (urlStr.includes('/share/streaming') || urlStr.includes('/share/download')) return false;
+                // Must be an actual .m3u8 file or a CDN HLS stream URL
+                return urlStr.includes('.m3u8') || urlStr.includes('type=M3U8');
+            };
+
             // Check for streaming URLs in the response
             if (rdata.urls && Array.isArray(rdata.urls)) {
-                // Find M3U8/HLS URL from the urls array
                 for (const item of rdata.urls) {
                     const urlStr = item.url || item.dlink || '';
-                    if (urlStr && (urlStr.includes('.m3u8') || urlStr.includes('type=M3U8') || urlStr.includes('hls'))) {
+                    if (isValidStreamUrl(urlStr)) {
                         return urlStr;
                     }
-                }
-                // If no M3U8 found, return first available URL
-                if (rdata.urls.length > 0 && rdata.urls[0].url) {
-                    return rdata.urls[0].url;
                 }
             }
 
             // Check for direct stream_url field
-            if (rdata.stream_url) {
+            if (isValidStreamUrl(rdata.stream_url)) {
                 return rdata.stream_url;
             }
 
-            // Check for dlink that might be M3U8
-            if (rdata.dlink && (rdata.dlink.includes('.m3u8') || rdata.dlink.includes('hls'))) {
+            // Check for dlink that is actual M3U8
+            if (isValidStreamUrl(rdata.dlink)) {
                 return rdata.dlink;
             }
 
