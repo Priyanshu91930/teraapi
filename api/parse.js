@@ -1252,7 +1252,8 @@ export default async function handler(req, res) {
               if (textContent.startsWith('#EXTM3U')) {
                 // Rewrite absolute CDN URLs to go through the local domain's download proxy to bypass CORS restrictions
                 textContent = textContent.replace(/^(https?:\/\/[^\s\r\n]+)/gm, (match) => {
-                  return `${siteOrigin}/download.php?url=${encodeURIComponent(match)}&filename=segment.ts`;
+                  const b64 = Buffer.from(match).toString('base64');
+                  return `${siteOrigin}/download.php?url=${encodeURIComponent(b64)}&b64=1&filename=segment.ts`;
                 });
                 streamUrl = 'data:application/x-mpegURL;base64,' + Buffer.from(textContent).toString('base64');
                 streamData = { m3u8: streamUrl };
@@ -1307,7 +1308,8 @@ export default async function handler(req, res) {
                     if (retryText.startsWith('#EXTM3U')) {
                       // Rewrite absolute CDN URLs to go through the local domain's download proxy to bypass CORS restrictions
                       retryText = retryText.replace(/^(https?:\/\/[^\s\r\n]+)/gm, (match) => {
-                        return `${siteOrigin}/download.php?url=${encodeURIComponent(match)}&filename=segment.ts`;
+                        const b64 = Buffer.from(match).toString('base64');
+                        return `${siteOrigin}/download.php?url=${encodeURIComponent(b64)}&b64=1&filename=segment.ts`;
                       });
                       streamUrl = 'data:application/x-mpegURL;base64,' + Buffer.from(retryText).toString('base64');
                       streamData = { m3u8: streamUrl };
