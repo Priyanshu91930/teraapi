@@ -179,18 +179,19 @@ async function fetchAnonShareList(shortUrl) {
 }
 
 
-// Helper to reset free 3 daily trials if a new day has started
+// Helper to reset free 3 daily trials if a new day has started in Indian Standard Time (IST - Asia/Kolkata)
 export async function checkAndResetDailyTrials(user) {
   if (!user) return user;
   const now = new Date();
   const lastReset = user.lastTrialReset ? new Date(user.lastTrialReset) : new Date(0);
 
-  const isNewDay = now.getUTCFullYear() !== lastReset.getUTCFullYear() ||
-                    now.getUTCMonth() !== lastReset.getUTCMonth() ||
-                    now.getUTCDate() !== lastReset.getUTCDate();
+  const nowIST = now.toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata' });
+  const lastResetIST = lastReset.toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata' });
+
+  const isNewDay = nowIST !== lastResetIST;
 
   if (isNewDay) {
-    console.log(`[Daily Reset] Resetting 3 free trials for ${user.email}. Previous remaining: ${user.freePremiumUsesRemaining}`);
+    console.log(`[Daily Reset] Resetting 3 free trials for ${user.email} (IST New Day: ${nowIST}). Previous remaining: ${user.freePremiumUsesRemaining}`);
     user.freePremiumUsesRemaining = 3;
     user.lastTrialReset = now;
     await user.save();
@@ -588,12 +589,12 @@ export default async function handler(req, res) {
         return res.status(403).json({ error: "Access denied. Subscription token has expired." });
       }
 
-      // Check and Reset daily quota
+      // Check and Reset daily quota (using IST Indian Standard Time)
       const now = new Date();
       const lastReset = new Date(subscription.lastReset);
-      const isNewDay = now.getUTCFullYear() !== lastReset.getUTCFullYear() ||
-                        now.getUTCMonth() !== lastReset.getUTCMonth() ||
-                        now.getUTCDate() !== lastReset.getUTCDate();
+      const nowIST = now.toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata' });
+      const lastResetIST = lastReset.toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata' });
+      const isNewDay = nowIST !== lastResetIST;
 
       if (isNewDay) {
         subscription.requestCount = 0;
@@ -816,7 +817,7 @@ export default async function handler(req, res) {
     }
 
     // ── ENTITLEMENT CHECK (Only execute if cache misses) ──────────────────────
-    const entitlement = await checkPremiumEntitlement(apiKey);
+    const entitlement = await checkPremiumEntitlement(apiKey, req);
     let isPremium = entitlement.isPremium;
     console.log(`[ROUTER] apiKey=${apiKey ? apiKey.substring(0,8)+'...' : 'none'} entitlement=${isPremium ? 'paid('+entitlement.plan+')' : 'free('+entitlement.reason+')'}`);
     
