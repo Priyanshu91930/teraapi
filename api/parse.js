@@ -219,10 +219,10 @@ async function checkPremiumEntitlement(apiKey, req) {
     return { isPremium: false, reason: 'unauthenticated' };
   }
 
-  // Master API key check (free/anonymous website access)
+  // Master API key check (website access) - Unlimited NDUS access granted
   if (apiKey === process.env.API_KEY) {
-    console.log('[Entitlement] Master API Key detected');
-    return { isPremium: false, reason: 'master_key' };
+    console.log('[Entitlement] Master API Key detected. Granting unlimited website NDUS access.');
+    return { isPremium: true, userId: 'website_user', plan: 'unlimited_website', userType: 'website' };
   }
 
   try {
@@ -238,7 +238,7 @@ async function checkPremiumEntitlement(apiKey, req) {
       let user = await User.findOne({ email });
       if (!user) {
         console.log(`[Entitlement] Google user not found in DB: ${email}`);
-        return { isPremium: false, reason: 'user_not_found' };
+        return { isPremium: true, userId: email, plan: 'unlimited_google', userType: 'unlimited' };
       }
 
       // Check and reset daily 3 trials if a new day has started
@@ -246,28 +246,8 @@ async function checkPremiumEntitlement(apiKey, req) {
 
       console.log(`[Entitlement] User match: premiumStatus=${user.premiumStatus}, usesRemaining=${user.freePremiumUsesRemaining}`);
 
-      // Check if user is active Premium
-      const isPremiumUser = user.premiumStatus === 'premium' || user.plan === 'premium';
-      const isExpired = user.premiumExpiresAt && new Date(user.premiumExpiresAt) < new Date();
-
-      if (isPremiumUser && !isExpired) {
-        return { isPremium: true, userId: email, plan: user.plan || 'premium', userType: 'premium' };
-      }
-
-      if (isPremiumUser && isExpired) {
-        user.plan = 'free';
-        user.premiumStatus = 'expired';
-        await user.save();
-        return { isPremium: false, reason: 'premium_expired', userType: 'expired' };
-      }
-
-      // Check Free Trial uses remaining
-      const trials = user.freePremiumUsesRemaining !== undefined ? user.freePremiumUsesRemaining : 3;
-      if (trials > 0) {
-        return { isPremium: true, userId: email, plan: 'free_trial', userType: 'free_trial', trialsRemaining: trials };
-      }
-
-      return { isPremium: false, reason: 'trials_exhausted', userType: 'free_trial', trialsRemaining: 0 };
+      // All users get unlimited premium access
+      return { isPremium: true, userId: email, plan: user.plan || 'unlimited', userType: 'premium' };
     } else {
       console.log('[Entitlement] Token failed to decode via verifySessionToken');
     }
