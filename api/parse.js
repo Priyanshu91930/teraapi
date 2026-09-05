@@ -206,11 +206,12 @@ export async function checkAndResetDailyTrials(user) {
 // Only verified Razorpay-activated ApiSubscription tokens are PAID tier.
 async function checkPremiumEntitlement(apiKey, req) {
   const clientType = req && req.headers ? (req.headers['x-client-type'] || req.headers['x-client-source']) : '';
+  const fromQuery = req && req.query ? req.query.from : '';
   
-  // Android App client gets full NDUS premium access without daily trial limit
-  if (clientType === 'android_app' || clientType === 'app') {
-    console.log('[Entitlement] Android App client detected. Granting full NDUS stream access.');
-    return { isPremium: true, userId: 'android_app_client', plan: 'unlimited_app', userType: 'android_app' };
+  // Android App and Telegram Bot client get full NDUS premium access
+  if (clientType === 'android_app' || clientType === 'app' || fromQuery === 'bot' || fromQuery === 'app') {
+    console.log('[Entitlement] Bot/App client detected. Granting full NDUS stream access.');
+    return { isPremium: true, userId: 'bot_or_app_client', plan: 'unlimited_bot', userType: 'bot' };
   }
 
   if (!apiKey) {
@@ -845,10 +846,12 @@ export default async function handler(req, res) {
       console.log(`[ROUTER] Using tier from header: ${tierHeader}`);
     }
 
-    // ── ANDROID APP CLIENT DETECTION (UNLIMITED PARSING) ──
+    // ── ANDROID APP / TELEGRAM BOT CLIENT DETECTION (UNLIMITED PARSING) ──
     const isAppClient = (
       req.query.from === 'app' || 
+      req.query.from === 'bot' || 
       req.query.source === 'app' || 
+      req.query.source === 'bot' || 
       req.headers['x-client-type'] === 'android_app' || 
       req.headers['x-client-source'] === 'app'
     );
@@ -856,9 +859,9 @@ export default async function handler(req, res) {
     if (isAppClient) {
       isPremium = true;
       entitlement.isPremium = true;
-      entitlement.plan = 'android_app';
-      entitlement.userType = 'app_user';
-      console.log('[ROUTER] Android App client detected. Premium NDUS routing enabled without 3-link daily limit restrictions.');
+      entitlement.plan = 'unlimited_client';
+      entitlement.userType = 'app_or_bot_user';
+      console.log('[ROUTER] App/Bot client detected. Premium NDUS routing enabled without 3-link daily limit restrictions.');
     }
 
     // ── BLOCKED IF TRIALS EXHAUSTED OR PLAN EXPIRED (WEBSITE USERS ONLY) ──
