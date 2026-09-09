@@ -1008,12 +1008,14 @@ export default async function handler(req, res) {
 
     let premiumApp = null; // Will hold the authenticated TeraBoxApp instance for folder listing
     let usedAnonymousFallback = false;
+    let activeWorkingNdusToken = '';
 
     if (isPremium) {
       // ── PREMIUM ROUTE ──
       console.log(`[ROUTER] user=${entitlement.userId || 'api'} feature=parse entitlement=paid`);
       console.log('[ROUTER] Using premium route (NDUS session)...');
       let ndusToken = await getNdusToken();
+      activeWorkingNdusToken = ndusToken;
       let autoLoginAttempted = false;
 
       // Bootstrap: no token anywhere? Try auto-login for self-start.
@@ -1058,6 +1060,7 @@ export default async function handler(req, res) {
             if (nextPoolToken && nextPoolToken !== ndusToken) {
               console.log('[Premium] Switching to next account from pool after 400141 challenge...');
               ndusToken = nextPoolToken;
+              activeWorkingNdusToken = nextPoolToken;
               app = new TeraBoxApp(ndusToken);
               app.params.ua = anonApp.params.ua;
               app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
@@ -1172,7 +1175,7 @@ export default async function handler(req, res) {
 
     // Only fetch NDUS token for PAID users if NDUS session succeeded — FREE users or Anonymous fallback must NEVER use blocked premium credentials
     // This gates streaming, dlink recovery, and HLS resolution for the file processing below.
-    let ndusToken = (isPremium && !usedAnonymousFallback) ? await getNdusToken() : '';
+    let ndusToken = (isPremium && !usedAnonymousFallback) ? (activeWorkingNdusToken || await getNdusToken()) : '';
     if (!isPremium) {
       console.log('[ROUTER] Free tier: ndusToken withheld. Streaming and premium dlink will be skipped.');
     }
