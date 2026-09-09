@@ -51,19 +51,76 @@ function buildCookie(ndusToken, browserId) {
   return cookie;
 }
 
-// Function to get the current ndus token (either from MongoDB, or falling back to process.env)
-async function getNdusToken() {
+// ── MULTI-ACCOUNT POOL & COOLDOWN MANAGER ────────────────────────────────────
+const ndusCooldowns = new Map();
+let currentTokenIndex = 0;
+
+async function getAllNdusTokens() {
+  const tokens = [];
+  
+  // 1. Read from Env variables (TERABOX_NDUS, TERABOX_NDUS_1, TERABOX_NDUS_2, comma-separated lists, etc.)
+  const envKeys = Object.keys(process.env).filter(k => /^TERABOX_NDUS/i.test(k) || /^NDUS/i.test(k) || /^NUDUS/i.test(k));
+  for (const k of envKeys) {
+    const val = process.env[k];
+    if (val && typeof val === 'string') {
+      val.split(',').map(t => t.trim()).filter(Boolean).forEach(t => {
+        if (!tokens.includes(t)) tokens.push(t);
+      });
+    }
+  }
+
+  // 2. Read from MongoDB config cache
   try {
     await connectToDatabase();
     const config = await SystemConfig.findOne({ key: 'TERABOX_NDUS' });
     if (config && config.value) {
-      console.log('[NDUS] Retrieved token from MongoDB config cache.');
-      return config.value;
+      config.value.split(',').map(t => t.trim()).filter(Boolean).forEach(t => {
+        if (!tokens.includes(t)) tokens.push(t);
+      });
+    }
+    const multiConfig = await SystemConfig.findOne({ key: 'TERABOX_ACCOUNTS' });
+    if (multiConfig && Array.isArray(multiConfig.value)) {
+      multiConfig.value.forEach(t => {
+        if (typeof t === 'string' && t.trim() && !tokens.includes(t.trim())) tokens.push(t.trim());
+      });
     }
   } catch (err) {
-    console.error('[NDUS Cache] Failed to fetch from DB:', err.message);
+    console.error('[NDUS Cache] Failed to fetch multi-account from DB:', err.message);
   }
-  return process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
+
+  return tokens;
+}
+
+// Function to get the next active ndus token from pool using round-robin
+async function getNdusToken() {
+  const tokens = await getAllNdusTokens();
+  if (tokens.length === 0) return '';
+
+  const now = Date.now();
+  const availableTokens = tokens.filter(t => {
+    const cooldownUntil = ndusCooldowns.get(t) || 0;
+    return now >= cooldownUntil;
+  });
+
+  if (availableTokens.length === 0) {
+    console.warn(`[NDUS Pool] All ${tokens.length} configured NDUS tokens are currently on cooldown due to 400141 limits.`);
+    return '';
+  }
+
+  currentTokenIndex = currentTokenIndex % availableTokens.length;
+  const selectedToken = availableTokens[currentTokenIndex];
+  currentTokenIndex = (currentTokenIndex + 1) % availableTokens.length;
+
+  console.log(`[NDUS Pool] Using active token (${currentTokenIndex}/${availableTokens.length} available, ${tokens.length} total)`);
+  return selectedToken;
+}
+
+// Put token on 30-min cooldown when 400141 occurs
+function markTokenCooldown(token, durationMs = 30 * 60 * 1000) {
+  if (!token) return;
+  const cooldownUntil = Date.now() + durationMs;
+  ndusCooldowns.set(token, cooldownUntil);
+  console.warn(`[NDUS Pool] Marked token on cooldown for ${Math.ceil(durationMs / 60000)} min due to 400141 challenge.`);
 }
 
 // ── ANONYMOUS MULTI-DOMAIN SHARE FETCHER ────────────────────────────────────
@@ -926,7 +983,22 @@ export default async function handler(req, res) {
             console.log('[Premium] Link is expired or deleted. Skipping token refresh.');
             listData = ndusData;
           } else if (ndusData && ndusData.errno === 400141) {
-            console.warn('[Premium] 400141 token challenge (need verify). Skipping auto-login refresh to prevent rate limits.');
+            console.warn('[Premium] 400141 token challenge (need verify). Putting current token on cooldown...');
+            markTokenCooldown(ndusToken);
+
+            // Try failover to next active account in pool
+            const nextPoolToken = await getNdusToken();
+            if (nextPoolToken && nextPoolToken !== ndusToken) {
+              console.log('[Premium] Switching to next account from pool after 400141 challenge...');
+              ndusToken = nextPoolToken;
+              app = new TeraBoxApp(ndusToken);
+              app.params.ua = anonApp.params.ua;
+              app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
+              app.params.whost = anonApp.params.whost;
+              app.params.uhost = anonApp.params.uhost;
+              ndusData = await app.shortUrlList(strippedShortUrl);
+              console.log('[Premium] Failover pool account NDUS response:', JSON.stringify(ndusData));
+            }
           }
 
           if (ndusData && ndusData.errno === 0) {
