@@ -1392,6 +1392,16 @@ export default async function handler(req, res) {
         }
       }
 
+      // Resolve 302 redirect on dlink to produce direct final CDN URL
+      if (dlink && ndusToken) {
+        const sessionCookie = buildCookie(ndusToken, browserId);
+        dlink = await resolveCdnUrl(dlink, {
+          'User-Agent': TB_UA,
+          'Referer': `${anonApp.params.whost}/`,
+          'Cookie': sessionCookie
+        });
+      }
+
       // CAPTCHA verification required block removed to prevent loops in India
 
       // Construct signed M3U8 streaming URL proxied via Hostinger download.php
