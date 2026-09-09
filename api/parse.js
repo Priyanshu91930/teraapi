@@ -55,7 +55,27 @@ function buildCookie(ndusToken, browserId) {
 const ndusCooldowns = new Map();
 let currentTokenIndex = 0;
 
-async function getAllNdusTokens() {
+// Helper to get configured TeraBox credentials from process.env
+function getConfiguredCredentials() {
+  const credentialPairs = [];
+  const defaultEmail = process.env.TERABOX_EMAIL || process.env.TERABOX_USER;
+  const defaultPass = process.env.TERABOX_PASSWORD || process.env.TERABOX_PASS;
+  if (defaultEmail && defaultPass) {
+    credentialPairs.push({ email: defaultEmail, password: defaultPass });
+  }
+  for (let i = 1; i <= 10; i++) {
+    const email = process.env[`TERABOX_USER_${i}`] || process.env[`TERABOX_EMAIL_${i}`];
+    const pass = process.env[`TERABOX_PASSWORD_${i}`] || process.env[`TERABOX_PASS_${i}`];
+    if (email && pass) {
+      if (!credentialPairs.some(p => p.email === email)) {
+        credentialPairs.push({ email, password: pass });
+      }
+    }
+  }
+  return credentialPairs;
+}
+
+async function getAllNdusTokens(whost = 'https://www.1024terabox.com') {
   const tokens = [];
   
   // 1. Read from Env variables (TERABOX_NDUS, TERABOX_NDUS_1, TERABOX_NDUS_2, comma-separated lists, etc.)
@@ -88,12 +108,36 @@ async function getAllNdusTokens() {
     console.error('[NDUS Cache] Failed to fetch multi-account from DB:', err.message);
   }
 
+  // 3. Auto-bootstrap: If we have more configured credentials than tokens in pool, trigger passport login refresh to generate tokens for all configured accounts!
+  const credentials = getConfiguredCredentials();
+  if (credentials.length > 0 && tokens.length < credentials.length && whost) {
+    console.log(`[NDUS Pool] Found ${credentials.length} configured account credential(s) in env, but only ${tokens.length} token(s) in MongoDB cache. Running auto-login for all accounts...`);
+    const freshToken = await refreshNdusToken(whost);
+    if (freshToken) {
+      try {
+        await connectToDatabase();
+        const config = await SystemConfig.findOne({ key: 'TERABOX_NDUS' });
+        if (config && config.value) {
+          config.value.split(',').map(t => t.trim()).filter(Boolean).forEach(t => {
+            if (!tokens.includes(t)) tokens.push(t);
+          });
+        }
+        const multiConfig = await SystemConfig.findOne({ key: 'TERABOX_ACCOUNTS' });
+        if (multiConfig && Array.isArray(multiConfig.value)) {
+          multiConfig.value.forEach(t => {
+            if (typeof t === 'string' && t.trim() && !tokens.includes(t.trim())) tokens.push(t.trim());
+          });
+        }
+      } catch (e) {}
+    }
+  }
+
   return tokens;
 }
 
 // Function to get the next active ndus token from pool using round-robin
-async function getNdusToken() {
-  const tokens = await getAllNdusTokens();
+async function getNdusToken(whost = 'https://www.1024terabox.com') {
+  const tokens = await getAllNdusTokens(whost);
   if (tokens.length === 0) return '';
 
   const now = Date.now();
