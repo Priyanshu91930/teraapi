@@ -883,6 +883,7 @@ export default async function handler(req, res) {
     // ─────────────────────────────────────────────────────────────────────────
 
     let premiumApp = null; // Will hold the authenticated TeraBoxApp instance for folder listing
+    let usedAnonymousFallback = false;
 
     if (isPremium) {
       // ── PREMIUM ROUTE ──
@@ -925,23 +926,7 @@ export default async function handler(req, res) {
             console.log('[Premium] Link is expired or deleted. Skipping token refresh.');
             listData = ndusData;
           } else if (ndusData && ndusData.errno === 400141) {
-            if (!autoLoginAttempted) {
-              console.log('[Premium] 400141 token challenge. Attempting single-flight refresh...');
-              const freshToken = await refreshNdusToken(anonApp.params.whost);
-              autoLoginAttempted = true;
-              if (freshToken) {
-                ndusToken = freshToken;
-                app = new TeraBoxApp(ndusToken);
-                app.params.ua = anonApp.params.ua;
-                app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
-                app.params.whost = anonApp.params.whost;
-                app.params.uhost = anonApp.params.uhost;
-                ndusData = await app.shortUrlList(strippedShortUrl);
-                console.log('[Premium] Retry NDUS response:', JSON.stringify(ndusData));
-              }
-            } else {
-              console.log('[Premium] Auto-login already attempted. Skipping duplicate refresh.');
-            }
+            console.warn('[Premium] 400141 token challenge (need verify). Skipping auto-login refresh to prevent rate limits.');
           }
 
           if (ndusData && ndusData.errno === 0) {
@@ -966,7 +951,10 @@ export default async function handler(req, res) {
           anonFallback.params.uhost = anonApp.params.uhost;
           const anonRes = await anonFallback.shortUrlList(strippedShortUrl);
           console.log('[Premium] Anonymous fallback response:', JSON.stringify(anonRes));
-          if (anonRes && anonRes.errno === 0) listData = anonRes;
+          if (anonRes && anonRes.errno === 0) {
+            listData = anonRes;
+            usedAnonymousFallback = true;
+          }
         } catch (anonErr) {
           console.error('[Premium] Anonymous fallback failed:', anonErr.message);
         }
@@ -1043,9 +1031,9 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Failed to parse the link. Please verify the URL or try again later.' });
     }
 
-    // Only fetch NDUS token for PAID users — FREE users must NEVER use premium credentials
+    // Only fetch NDUS token for PAID users if NDUS session succeeded — FREE users or Anonymous fallback must NEVER use blocked premium credentials
     // This gates streaming, dlink recovery, and HLS resolution for the file processing below.
-    let ndusToken = isPremium ? await getNdusToken() : '';
+    let ndusToken = (isPremium && !usedAnonymousFallback) ? await getNdusToken() : '';
     if (!isPremium) {
       console.log('[ROUTER] Free tier: ndusToken withheld. Streaming and premium dlink will be skipped.');
     }
