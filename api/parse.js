@@ -94,14 +94,25 @@ async function getAllNdusTokens(whost = 'https://www.1024terabox.com') {
     await connectToDatabase();
     const config = await SystemConfig.findOne({ key: 'TERABOX_NDUS' });
     if (config && config.value) {
-      config.value.split(',').map(t => t.trim()).filter(Boolean).forEach(t => {
+      let parsed = [];
+      try {
+        if (config.value.startsWith('[')) parsed = JSON.parse(config.value);
+        else if (config.value.includes('|||')) parsed = config.value.split('|||');
+        else parsed = config.value.split(',');
+      } catch (e) { parsed = [config.value]; }
+      parsed.map(t => typeof t === 'string' ? t.trim() : '').filter(Boolean).forEach(t => {
         if (!tokens.includes(t)) tokens.push(t);
       });
     }
     const multiConfig = await SystemConfig.findOne({ key: 'TERABOX_ACCOUNTS' });
-    if (multiConfig && Array.isArray(multiConfig.value)) {
-      multiConfig.value.forEach(t => {
-        if (typeof t === 'string' && t.trim() && !tokens.includes(t.trim())) tokens.push(t.trim());
+    if (multiConfig && multiConfig.value) {
+      let parsed = [];
+      try {
+        if (multiConfig.value.startsWith('[')) parsed = JSON.parse(multiConfig.value);
+        else parsed = multiConfig.value.split('|||');
+      } catch (e) { parsed = [multiConfig.value]; }
+      parsed.map(t => typeof t === 'string' ? t.trim() : '').filter(Boolean).forEach(t => {
+        if (!tokens.includes(t)) tokens.push(t);
       });
     }
   } catch (err) {
@@ -118,14 +129,14 @@ async function getAllNdusTokens(whost = 'https://www.1024terabox.com') {
         await connectToDatabase();
         const config = await SystemConfig.findOne({ key: 'TERABOX_NDUS' });
         if (config && config.value) {
-          config.value.split(',').map(t => t.trim()).filter(Boolean).forEach(t => {
+          let parsed = [];
+          try {
+            if (config.value.startsWith('[')) parsed = JSON.parse(config.value);
+            else if (config.value.includes('|||')) parsed = config.value.split('|||');
+            else parsed = config.value.split(',');
+          } catch (e) { parsed = [config.value]; }
+          parsed.map(t => typeof t === 'string' ? t.trim() : '').filter(Boolean).forEach(t => {
             if (!tokens.includes(t)) tokens.push(t);
-          });
-        }
-        const multiConfig = await SystemConfig.findOne({ key: 'TERABOX_ACCOUNTS' });
-        if (multiConfig && Array.isArray(multiConfig.value)) {
-          multiConfig.value.forEach(t => {
-            if (typeof t === 'string' && t.trim() && !tokens.includes(t.trim())) tokens.push(t.trim());
           });
         }
       } catch (e) {}
@@ -513,12 +524,12 @@ export async function refreshNdusToken(whost) {
         try {
           await SystemConfig.findOneAndUpdate(
             { key: 'TERABOX_NDUS' },
-            { value: generatedTokens.join(','), updatedAt: new Date() },
+            { value: JSON.stringify(generatedTokens), updatedAt: new Date() },
             { upsert: true }
           );
           await SystemConfig.findOneAndUpdate(
             { key: 'TERABOX_ACCOUNTS' },
-            { value: generatedTokens, updatedAt: new Date() },
+            { value: JSON.stringify(generatedTokens), updatedAt: new Date() },
             { upsert: true }
           );
           console.log(`[NDUS Auto-Login] Saved ${generatedTokens.length} full cookie token(s) to MongoDB configuration cache.`);
