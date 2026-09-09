@@ -376,56 +376,79 @@ export async function refreshNdusToken(whost) {
   // ── Start the actual refresh, wrapped in a single-flight promise ──
   _ndusRefreshInFlight = (async () => {
     try {
-      const email = process.env.TERABOX_EMAIL || process.env.TERABOX_USER;
-      const password = process.env.TERABOX_PASSWORD || process.env.TERABOX_PASS;
+      // Collect all configured TeraBox email/password credential pairs
+      const credentialPairs = [];
+      
+      const defaultEmail = process.env.TERABOX_EMAIL || process.env.TERABOX_USER;
+      const defaultPass = process.env.TERABOX_PASSWORD || process.env.TERABOX_PASS;
+      if (defaultEmail && defaultPass) {
+        credentialPairs.push({ email: defaultEmail, password: defaultPass });
+      }
 
-      if (!email || !password) {
+      // Check numbered credentials (TERABOX_USER_1/TERABOX_PASSWORD_1, TERABOX_USER_2/TERABOX_PASSWORD_2, etc.)
+      for (let i = 1; i <= 10; i++) {
+        const email = process.env[`TERABOX_USER_${i}`] || process.env[`TERABOX_EMAIL_${i}`];
+        const pass = process.env[`TERABOX_PASSWORD_${i}`] || process.env[`TERABOX_PASS_${i}`];
+        if (email && pass) {
+          if (!credentialPairs.some(p => p.email === email)) {
+            credentialPairs.push({ email, password: pass });
+          }
+        }
+      }
+
+      if (credentialPairs.length === 0) {
         console.log('[NDUS Auto-Login] Missing credentials (TERABOX_EMAIL / TERABOX_PASSWORD) in env variables.');
         return null;
       }
 
-      console.log(`[NDUS Auto-Login] Attempting passport login for email: ${email}`);
-      const app = new TeraBoxApp('');
-      app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-      const tbDomains = ['1024tera','1024terabox','terasharefile','terashare','terasharelink','nephobox','teraboxapp','tibbox','tibibox','freeterabox','teraboxlink','mirrobox','4funbox','terabox.fun','momerybox','terabox.app','terabox.ap','dubox','terabox.best','teraboxshare','terafileshare','1024box'];
-      app.TERABOX_DOMAIN = tbDomains.some(d => whost.includes(d)) ? '1024terabox.com' : 'terabox.com';
-      app.params.whost = whost;
-      app.params.uhost = whost;
+      const generatedTokens = [];
 
-      const preLoginData = await app.passportPreLogin(email);
-      const loginRes = await app.passportLogin(preLoginData, email, password);
+      for (const pair of credentialPairs) {
+        console.log(`[NDUS Auto-Login] Attempting passport login for email: ${pair.email}`);
+        const app = new TeraBoxApp('');
+        app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+        const tbDomains = ['1024tera','1024terabox','terasharefile','terashare','terasharelink','nephobox','teraboxapp','tibbox','tibibox','freeterabox','teraboxlink','mirrobox','4funbox','terabox.fun','momerybox','terabox.app','terabox.ap','dubox','terabox.best','teraboxshare','terafileshare','1024box'];
+        app.TERABOX_DOMAIN = tbDomains.some(d => whost.includes(d)) ? '1024terabox.com' : 'terabox.com';
+        app.params.whost = whost;
+        app.params.uhost = whost;
 
-      if (loginRes.code === 0 && loginRes.data && loginRes.data.ndus) {
-        // Use FULL cookie string from login (ndus + browserid + csrf + all session cookies)
-        const fullCookies = loginRes.data.cookies || `ndus=${loginRes.data.ndus}`;
-        console.log('[NDUS Auto-Login] Success! New token generated.');
-        console.log('[NDUS Auto-Login] Full cookies preview:', fullCookies.substring(0, 60) + '...');
+        try {
+          const preLoginData = await app.passportPreLogin(pair.email);
+          const loginRes = await app.passportLogin(preLoginData, pair.email, pair.password);
 
-        // Save full cookie string to MongoDB persistently
+          if (loginRes.code === 0 && loginRes.data && loginRes.data.ndus) {
+            const fullCookies = loginRes.data.cookies || `ndus=${loginRes.data.ndus}`;
+            console.log(`[NDUS Auto-Login] Success for ${pair.email}! New token generated.`);
+            generatedTokens.push(fullCookies);
+          } else {
+            console.error(`[NDUS Auto-Login] Failed for ${pair.email}. Response:`, JSON.stringify(loginRes));
+          }
+        } catch (accountErr) {
+          console.error(`[NDUS Auto-Login] Exception for ${pair.email}:`, accountErr.message);
+        }
+      }
+
+      if (generatedTokens.length > 0) {
+        // Save generated tokens to MongoDB persistently
         try {
           await SystemConfig.findOneAndUpdate(
             { key: 'TERABOX_NDUS' },
-            { value: fullCookies, updatedAt: new Date() },
+            { value: generatedTokens.join(','), updatedAt: new Date() },
             { upsert: true }
           );
-          console.log('[NDUS Auto-Login] Saved full cookies to MongoDB configuration cache.');
+          await SystemConfig.findOneAndUpdate(
+            { key: 'TERABOX_ACCOUNTS' },
+            { value: generatedTokens, updatedAt: new Date() },
+            { upsert: true }
+          );
+          console.log(`[NDUS Auto-Login] Saved ${generatedTokens.length} full cookie token(s) to MongoDB configuration cache.`);
         } catch (dbErr) {
           console.error('[NDUS Auto-Login] Failed to save to MongoDB:', dbErr.message);
         }
-        return fullCookies;
-      } else {
-        console.error('[NDUS Auto-Login] Failed. Response:', JSON.stringify(loginRes));
-        
-        // Target verification / spam limit check to activate cooldown lock
-        if (loginRes.code === 102 || String(loginRes.msg).includes('extra') || String(loginRes.msg).includes('verify')) {
-          const timeoutSeconds = (loginRes.data && loginRes.data.spam_expire_in) || 1500;
-          const safetyBuffer = 60; // 60 seconds safety buffer
-          const cooldownMs = (timeoutSeconds + safetyBuffer) * 1000;
-          autoLoginCooldownUntil = Date.now() + cooldownMs;
-          console.warn(`[NDUS Auto-Login] TeraBox rate-limiting/spam lock detected! Locking logins for ${Math.ceil(cooldownMs / 60000)} minutes (spam_expire_in=${timeoutSeconds}s + 60s buffer).`);
-        }
-        return null;
+        return generatedTokens[0];
       }
+
+      return null;
     } catch (loginErr) {
       console.error('[NDUS Auto-Login] Exception occurred:', loginErr.message);
       return null;
