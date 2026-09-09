@@ -1,16 +1,7 @@
 import { TeraBoxApp } from '../api.js';
 import { connectToDatabase, SystemConfig, ApiSubscription, User } from '../db.js';
 import { verifySessionToken } from './auth/me.js';
-import { consumeFreeTrial } from './parse.js';
-
-async function getNdusToken() {
-  try {
-    await connectToDatabase();
-    const config = await SystemConfig.findOne({ key: 'TERABOX_NDUS' });
-    if (config && config.value) return config.value;
-  } catch (err) {}
-  return process.env.TERABOX_NDUS || '';
-}
+import { consumeFreeTrial, getNdusToken, markTokenCooldown } from './parse.js';
 
 function buildCookie(ndusToken, browserId) {
   if (ndusToken && ndusToken.includes('=')) return ndusToken;

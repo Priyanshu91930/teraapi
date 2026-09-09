@@ -136,7 +136,7 @@ async function getAllNdusTokens(whost = 'https://www.1024terabox.com') {
 }
 
 // Function to get the next active ndus token from pool using round-robin
-async function getNdusToken(whost = 'https://www.1024terabox.com') {
+export async function getNdusToken(whost = 'https://www.1024terabox.com') {
   const tokens = await getAllNdusTokens(whost);
   if (tokens.length === 0) return '';
 
@@ -160,7 +160,7 @@ async function getNdusToken(whost = 'https://www.1024terabox.com') {
 }
 
 // Put token on 30-min cooldown when 400141 occurs
-function markTokenCooldown(token, durationMs = 30 * 60 * 1000) {
+export function markTokenCooldown(token, durationMs = 30 * 60 * 1000) {
   if (!token) return;
   const cooldownUntil = Date.now() + durationMs;
   ndusCooldowns.set(token, cooldownUntil);

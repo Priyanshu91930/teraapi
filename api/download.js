@@ -1,34 +1,9 @@
 import { Readable } from 'stream';
 import { connectToDatabase, SystemConfig, ApiSubscription, User } from '../db.js';
 import { verifySessionToken } from './auth/me.js';
-import { consumeFreeTrial } from './parse.js';
+import { consumeFreeTrial, getNdusToken, markTokenCooldown } from './parse.js';
 
 export const config = { maxDuration: 60 };
-
-// In-memory cache to avoid MongoDB call on every chunk request
-let cachedToken = null;
-let cacheTime = 0;
-const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
-
-async function getNdusToken() {
-  const now = Date.now();
-  if (cachedToken && (now - cacheTime) < CACHE_TTL) {
-    return cachedToken;
-  }
-  try {
-    await connectToDatabase();
-    const config = await SystemConfig.findOne({ key: 'TERABOX_NDUS' });
-    if (config && config.value) {
-      cachedToken = config.value;
-      cacheTime = now;
-      console.log('[NDUS] Retrieved token from MongoDB config cache.');
-      return cachedToken;
-    }
-  } catch (err) {
-    console.error('[NDUS Cache] Failed to fetch from DB:', err.message);
-  }
-  return process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
-}
 
 function isPrivateHost(host) {
   const blocked = /(^|\.)(local|localhost|internal|home|corp)$/i;
