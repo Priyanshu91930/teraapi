@@ -167,6 +167,42 @@ export function markTokenCooldown(token, durationMs = 30 * 60 * 1000) {
   console.warn(`[NDUS Pool] Marked token on cooldown for ${Math.ceil(durationMs / 60000)} min due to 400141 challenge.`);
 }
 
+// Remove bad token from MongoDB when 400141 occurs
+export async function removeTokenFromDb(badToken) {
+  if (!badToken) return;
+  try {
+    await connectToDatabase();
+    const config = await SystemConfig.findOne({ key: 'TERABOX_NDUS' });
+    if (config && config.value) {
+      const tokens = config.value.split(',').map(t => t.trim()).filter(t => t && t !== badToken);
+      await SystemConfig.findOneAndUpdate(
+        { key: 'TERABOX_NDUS' },
+        { value: tokens.join(','), updatedAt: new Date() },
+        { upsert: true }
+      );
+      console.log(`[MongoDB Cache] Removed bad token from TERABOX_NDUS (${tokens.length} token(s) remaining in DB).`);
+    }
+  } catch (err) {
+    console.error('[MongoDB Cache] Failed to remove bad token:', err.message);
+  }
+}
+
+// Update primary working token in MongoDB
+export async function updatePrimaryNdusInDb(workingToken) {
+  if (!workingToken) return;
+  try {
+    await connectToDatabase();
+    await SystemConfig.findOneAndUpdate(
+      { key: 'TERABOX_NDUS' },
+      { value: workingToken, updatedAt: new Date() },
+      { upsert: true }
+    );
+    console.log('[MongoDB Cache] Updated primary working token in TERABOX_NDUS.');
+  } catch (err) {
+    console.error('[MongoDB Cache] Failed to update working token:', err.message);
+  }
+}
+
 // ── ANONYMOUS MULTI-DOMAIN SHARE FETCHER ────────────────────────────────────
 // Fetches TeraBox share list WITHOUT any login credentials.
 // Strategy: Try multiple TeraBox mirror domains. For each, first try the
@@ -1052,8 +1088,9 @@ export default async function handler(req, res) {
             console.log('[Premium] Link is expired or deleted. Skipping token refresh.');
             listData = ndusData;
           } else if (ndusData && ndusData.errno === 400141) {
-            console.warn('[Premium] 400141 token challenge (need verify). Putting current token on cooldown...');
+            console.warn('[Premium] 400141 token challenge (need verify). Purging bad token from MongoDB cache...');
             markTokenCooldown(ndusToken);
+            removeTokenFromDb(ndusToken).catch(e => {});
 
             // Try failover to next active account in pool
             const nextPoolToken = await getNdusToken();
@@ -1073,6 +1110,9 @@ export default async function handler(req, res) {
 
           if (ndusData && ndusData.errno === 0) {
             listData = ndusData;
+            if (activeWorkingNdusToken) {
+              updatePrimaryNdusInDb(activeWorkingNdusToken).catch(e => {});
+            }
           } else if (ndusData && !isLinkExpired) {
             tokenExpiredDetected = true;
             console.warn(`[Premium] Token returned error code ${ndusData.errno}.`);
