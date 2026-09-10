@@ -1104,9 +1104,14 @@ export default async function handler(req, res) {
             removeTokenFromDb(ndusToken).catch(e => {});
 
             // Try failover to next active account in pool
-            const nextPoolToken = await getNdusToken();
+            let nextPoolToken = await getNdusToken();
+            if (!nextPoolToken || nextPoolToken === ndusToken) {
+              console.log('[Premium] No ready token in pool cache. Attempting auto-login for alternate accounts...');
+              nextPoolToken = await refreshNdusToken(anonApp.params.whost) || '';
+            }
+
             if (nextPoolToken && nextPoolToken !== ndusToken) {
-              console.log('[Premium] Switching to next account from pool after 400141 challenge...');
+              console.log('[Premium] Switching to alternate account after 400141 challenge...');
               ndusToken = nextPoolToken;
               activeWorkingNdusToken = nextPoolToken;
               app = new TeraBoxApp(ndusToken);
@@ -1114,8 +1119,9 @@ export default async function handler(req, res) {
               app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
               app.params.whost = anonApp.params.whost;
               app.params.uhost = anonApp.params.uhost;
+              premiumApp = app;
               ndusData = await app.shortUrlList(strippedShortUrl);
-              console.log('[Premium] Failover pool account NDUS response:', JSON.stringify(ndusData));
+              console.log('[Premium] Failover account NDUS response:', JSON.stringify(ndusData));
             }
           }
 
