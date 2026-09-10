@@ -119,10 +119,11 @@ async function getAllNdusTokens(whost = 'https://www.1024terabox.com') {
     console.error('[NDUS Cache] Failed to fetch multi-account from DB:', err.message);
   }
 
-  // 3. Auto-bootstrap: If we have more configured credentials than tokens in pool, trigger passport login refresh to generate tokens for all configured accounts!
+  // 3. Auto-bootstrap: If MongoDB cache has NO active tokens at all (tokens.length === 0), trigger passport login refresh to generate tokens.
+  // CRITICAL: Do NOT run auto-login if we already have working tokens in DB (tokens.length >= 1), otherwise bad/challenged accounts will be repeatedly re-logged.
   const credentials = getConfiguredCredentials();
-  if (credentials.length > 0 && tokens.length < credentials.length && whost) {
-    console.log(`[NDUS Pool] Found ${credentials.length} configured account credential(s) in env, but only ${tokens.length} token(s) in MongoDB cache. Running auto-login for all accounts...`);
+  if (credentials.length > 0 && tokens.length === 0 && whost) {
+    console.log(`[NDUS Pool] No active tokens in MongoDB cache. Running auto-login for all ${credentials.length} configured account(s)...`);
     const freshToken = await refreshNdusToken(whost);
     if (freshToken) {
       try {
