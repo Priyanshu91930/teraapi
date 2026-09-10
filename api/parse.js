@@ -1089,7 +1089,7 @@ export default async function handler(req, res) {
             ndusData.errno === 140 || ndusData.errno === -140 ||
             ndusData.errno === 116 || ndusData.errno === 117 ||
             ndusData.errno === 12  || ndusData.errno === 110 ||
-            ndusData.errno === -110 ||
+            ndusData.errno === -110 || ndusData.errno === -4 || ndusData.errno === 4 ||
             String(ndusData.errmsg || '').toLowerCase().includes('delete') ||
             String(ndusData.errmsg || '').toLowerCase().includes('expire') ||
             String(ndusData.errmsg || '').toLowerCase().includes('not exist')
@@ -1175,7 +1175,7 @@ export default async function handler(req, res) {
       tokenExpiredDetected = false;
     }
 
-// Failsafe Fallback: If both failed, but anonymous returned a list (even without dlink), use it as fallback
+    // Failsafe Fallback: If both failed, but anonymous returned a list (even without dlink), use it as fallback
     if ((!listData || listData.errno !== 0) && listData && listData.list) {
       listData.errno = 0; // Bypass error block to return whatever metadata we got
     }
@@ -1187,7 +1187,7 @@ export default async function handler(req, res) {
 
         // ── SHARE_UNAVAILABLE: link actually expired/deleted/cancelled ──
         if (errno === 140 || errno === -140 || errno === 116 || errno === 117 || 
-            errno === 12 || errno === 110 || errno === -110 || 
+            errno === 12 || errno === 110 || errno === -110 || errno === -4 || errno === 4 ||
             errmsg.includes('delete') || errmsg.includes('expire') || errmsg.includes('not exist')) {
           return res.status(404).json({
             success: false,
