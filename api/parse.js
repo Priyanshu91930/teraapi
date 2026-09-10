@@ -185,10 +185,17 @@ export async function removeTokenFromDb(badToken) {
     await connectToDatabase();
     const config = await SystemConfig.findOne({ key: 'TERABOX_NDUS' });
     if (config && config.value) {
-      const tokens = config.value.split(',').map(t => t.trim()).filter(t => t && t !== badToken);
+      let tokens = [];
+      try {
+        if (config.value.startsWith('[')) tokens = JSON.parse(config.value);
+        else if (config.value.includes('|||')) tokens = config.value.split('|||');
+        else tokens = config.value.split(',');
+      } catch (e) { tokens = [config.value]; }
+
+      tokens = tokens.map(t => typeof t === 'string' ? t.trim() : '').filter(t => t && t !== badToken);
       await SystemConfig.findOneAndUpdate(
         { key: 'TERABOX_NDUS' },
-        { value: tokens.join(','), updatedAt: new Date() },
+        { value: JSON.stringify(tokens), updatedAt: new Date() },
         { upsert: true }
       );
       console.log(`[MongoDB Cache] Removed bad token from TERABOX_NDUS (${tokens.length} token(s) remaining in DB).`);
@@ -203,12 +210,24 @@ export async function updatePrimaryNdusInDb(workingToken) {
   if (!workingToken) return;
   try {
     await connectToDatabase();
+    const config = await SystemConfig.findOne({ key: 'TERABOX_NDUS' });
+    let tokens = [];
+    if (config && config.value) {
+      try {
+        if (config.value.startsWith('[')) tokens = JSON.parse(config.value);
+        else if (config.value.includes('|||')) tokens = config.value.split('|||');
+        else tokens = config.value.split(',');
+      } catch (e) { tokens = [config.value]; }
+    }
+    tokens = tokens.map(t => typeof t === 'string' ? t.trim() : '').filter(Boolean);
+    // Put workingToken at the front of pool
+    tokens = [workingToken, ...tokens.filter(t => t !== workingToken)];
     await SystemConfig.findOneAndUpdate(
       { key: 'TERABOX_NDUS' },
-      { value: workingToken, updatedAt: new Date() },
+      { value: JSON.stringify(tokens), updatedAt: new Date() },
       { upsert: true }
     );
-    console.log('[MongoDB Cache] Updated primary working token in TERABOX_NDUS.');
+    console.log('[MongoDB Cache] Promoted working token to top of TERABOX_NDUS pool.');
   } catch (err) {
     console.error('[MongoDB Cache] Failed to update working token:', err.message);
   }
