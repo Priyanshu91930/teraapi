@@ -1090,6 +1090,8 @@ export default async function handler(req, res) {
             ndusData.errno === 116 || ndusData.errno === 117 ||
             ndusData.errno === 12  || ndusData.errno === 110 ||
             ndusData.errno === -110 || ndusData.errno === -4 || ndusData.errno === 4 ||
+            ndusData.errno === 2130 || ndusData.errno === -2130 || ndusData.errno === 9 || ndusData.errno === -9 ||
+            ndusData.errno === 105 || ndusData.errno === -6 ||
             String(ndusData.errmsg || '').toLowerCase().includes('delete') ||
             String(ndusData.errmsg || '').toLowerCase().includes('expire') ||
             String(ndusData.errmsg || '').toLowerCase().includes('not exist')
