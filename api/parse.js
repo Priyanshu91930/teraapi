@@ -1554,6 +1554,13 @@ export default async function handler(req, res) {
           'Referer': `${anonApp.params.whost}/`,
           'Cookie': sessionCookie
         });
+
+        // Proxy direct TeraBox CDN link through Hostinger download proxy to inject session cookies
+        // This prevents TeraBox "31362 sign error" when opened in external browsers/video players without cookies
+        if (dlink && !dlink.includes('teraboxdownloader.co.in')) {
+          const b64Dl = Buffer.from(dlink).toString('base64');
+          dlink = `https://teraboxdownloader.co.in/download.php?url=${encodeURIComponent(b64Dl)}&b64=1`;
+        }
       }
 
       // Failsafe Fallback: If direct dlink recovery failed (due to 400141 / 400310 rate limits), construct proxied download URL via Hostinger download.php
