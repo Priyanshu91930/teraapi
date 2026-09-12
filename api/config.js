@@ -26,18 +26,22 @@ export default async function handler(req, res) {
       const config = await SystemConfig.findOne({ key: 'TERABOX_NDUS' });
       const currentToken = config ? config.value : "";
 
+      const freeModeConfig = await SystemConfig.findOne({ key: 'USE_FREE_ACCOUNT_ONLY' });
+      const freeNdusConfig = await SystemConfig.findOne({ key: 'TERABOX_FREE_NDUS' });
+      const envFreeMode = process.env.USE_FREE_ACCOUNT_ONLY || process.env.FREE_MODE_ONLY;
+      const freeModeActive = (envFreeMode === 'true' || envFreeMode === '1') || (freeModeConfig && (freeModeConfig.value === 'true' || freeModeConfig.value === '1'));
+
       // Obscured version for casual/manual checks
       const obscuredToken = currentToken
         ? `${currentToken.substring(0, 5)}...${currentToken.substring(currentToken.length - 5)}`
         : "None (falling back to Vercel env)";
 
-      // Full token ONLY revealed to authenticated callers (admin API key is
-      // required above) — consumed by the Hostinger download proxy so it can
-      // always send the same fresh session cookie as the Vercel API.
       const reveal = req.query.reveal === '1';
 
       return res.status(200).json({
         status: "success",
+        use_free_account_only: freeModeActive,
+        free_ndus_configured: !!(freeNdusConfig?.value || process.env.TERABOX_FREE_NDUS),
         cached_ndus: obscuredToken,
         ndus_full: reveal ? currentToken : "",
         updatedAt: config ? config.updatedAt : null
@@ -46,34 +50,52 @@ export default async function handler(req, res) {
 
     if (req.method === 'POST') {
       const body = req.body || {};
-      const { ndus, action } = body;
+      const { ndus, free_ndus, use_free_account_only, action } = body;
+
+      // Handle updating Free Mode toggle
+      if (use_free_account_only !== undefined) {
+        await SystemConfig.findOneAndUpdate(
+          { key: 'USE_FREE_ACCOUNT_ONLY' },
+          { value: String(use_free_account_only), updatedAt: new Date() },
+          { upsert: true, new: true }
+        );
+        console.log(`[Config API] USE_FREE_ACCOUNT_ONLY set to ${use_free_account_only} in MongoDB.`);
+      }
+
+      // Handle updating Free Account NDUS token
+      if (free_ndus !== undefined) {
+        await SystemConfig.findOneAndUpdate(
+          { key: 'TERABOX_FREE_NDUS' },
+          { value: String(free_ndus).trim(), updatedAt: new Date() },
+          { upsert: true, new: true }
+        );
+        console.log('[Config API] TERABOX_FREE_NDUS updated successfully in MongoDB.');
+      }
 
       // Allow clearing the token via action=clear or ndus='' (empty string)
       if (action === 'clear' || ndus === '') {
         await SystemConfig.deleteOne({ key: 'TERABOX_NDUS' });
-        console.log('[Config API] TERABOX_NDUS cleared from MongoDB. API will run in fully anonymous mode.');
+        console.log('[Config API] TERABOX_NDUS cleared from MongoDB.');
         return res.status(200).json({
           status: 'success',
-          message: 'TERABOX_NDUS token cleared. API is now running in anonymous mode (no premium credentials).'
+          message: 'TERABOX_NDUS token cleared.'
         });
       }
 
-      if (!ndus) {
-        return res.status(400).json({ error: "Missing 'ndus' parameter in request body. Use action='clear' to remove token." });
+      if (ndus) {
+        // Update the cache in MongoDB
+        const updatedConfig = await SystemConfig.findOneAndUpdate(
+          { key: 'TERABOX_NDUS' },
+          { value: ndus, updatedAt: new Date() },
+          { upsert: true, new: true }
+        );
+
+        console.log('[Config API] Updated TERABOX_NDUS successfully in MongoDB config.');
       }
 
-      // Update the cache in MongoDB
-      const updatedConfig = await SystemConfig.findOneAndUpdate(
-        { key: 'TERABOX_NDUS' },
-        { value: ndus, updatedAt: new Date() },
-        { upsert: true, new: true }
-      );
-
-      console.log('[Config API] Updated TERABOX_NDUS successfully in MongoDB config.');
       return res.status(200).json({ 
         status: 'success', 
-        message: 'TERABOX_NDUS updated successfully in database cache.',
-        updatedAt: updatedConfig.updatedAt
+        message: 'System configuration updated successfully in database cache.'
       });
     }
 

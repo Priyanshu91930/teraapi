@@ -62,7 +62,55 @@ function getConfiguredCredentials() {
   return credentialPairs;
 }
 
+// Helper to check if Free Account Only mode is enabled (via Vercel Env or MongoDB)
+export async function isFreeAccountOnlyMode() {
+  const envVal = process.env.USE_FREE_ACCOUNT_ONLY || process.env.FREE_MODE_ONLY;
+  if (envVal !== undefined && envVal !== '') {
+    const s = String(envVal).trim().toLowerCase();
+    return s === 'true' || s === '1' || s === 'yes' || s === 'on';
+  }
+  try {
+    await connectToDatabase();
+    const config = await SystemConfig.findOne({ key: 'USE_FREE_ACCOUNT_ONLY' }) || await SystemConfig.findOne({ key: 'FREE_MODE_ONLY' });
+    if (config && config.value) {
+      const s = String(config.value).trim().toLowerCase();
+      return s === 'true' || s === '1' || s === 'yes' || s === 'on';
+    }
+  } catch (e) {}
+  return false;
+}
+
+// Helper to get Free TeraBox ndus token from DB or Env
+export async function getFreeNdusToken() {
+  try {
+    await connectToDatabase();
+    const config = await SystemConfig.findOne({ key: 'TERABOX_FREE_NDUS' });
+    if (config && config.value && config.value.trim()) {
+      return config.value.trim();
+    }
+  } catch (e) {}
+
+  const freeEnv = process.env.TERABOX_FREE_NDUS || process.env.FREE_NDUS || process.env.NDUS_FREE;
+  if (freeEnv && freeEnv.trim()) {
+    return freeEnv.trim();
+  }
+
+  return '';
+}
+
 async function getAllNdusTokens(whost = 'https://www.1024terabox.com') {
+  // Check if Free Account Only mode is triggered
+  const freeModeActive = await isFreeAccountOnlyMode();
+  if (freeModeActive) {
+    const freeToken = await getFreeNdusToken();
+    if (freeToken) {
+      console.log(`[NDUS Pool] FREE MODE ACTIVE (USE_FREE_ACCOUNT_ONLY=true). Using Free TeraBox Account token.`);
+      return [freeToken];
+    } else {
+      console.warn(`[NDUS Pool] FREE MODE ACTIVE but TERABOX_FREE_NDUS is not set in Vercel Env or MongoDB.`);
+    }
+  }
+
   const tokens = [];
   
   // 1. Read active tokens from MongoDB config cache
@@ -122,7 +170,7 @@ async function getAllNdusTokens(whost = 'https://www.1024terabox.com') {
   return tokens;
 }
 
-// Function to get the next active ndus token from pool using round-robin
+// Function to get the active ndus token from pool using Sticky Allocation (stays on Account 1 until 400141)
 export async function getNdusToken(whost = 'https://www.1024terabox.com') {
   const tokens = await getAllNdusTokens(whost);
   if (tokens.length === 0) return '';
@@ -138,16 +186,16 @@ export async function getNdusToken(whost = 'https://www.1024terabox.com') {
     return '';
   }
 
-  currentTokenIndex = currentTokenIndex % availableTokens.length;
-  const selectedToken = availableTokens[currentTokenIndex];
-  currentTokenIndex = (currentTokenIndex + 1) % availableTokens.length;
+  // STICKY ALLOCATION: Always use the first available non-cooldown token (Account 1).
+  // Only switch to Account 2 when Account 1 hits a 400141 challenge / cooldown.
+  const selectedToken = availableTokens[0];
 
-  console.log(`[NDUS Pool] Using active token (${currentTokenIndex}/${availableTokens.length} available, ${tokens.length} total)`);
+  console.log(`[NDUS Pool] Using active sticky token (1/${availableTokens.length} available, ${tokens.length} total in pool)`);
   return selectedToken;
 }
 
-// Put token on 30-min cooldown when 400141 occurs
-export function markTokenCooldown(token, durationMs = 30 * 60 * 1000) {
+// Put token on cooldown (default: 2 hours) when 400141 occurs
+export function markTokenCooldown(token, durationMs = 2 * 60 * 60 * 1000) {
   if (!token) return;
   const cooldownUntil = Date.now() + durationMs;
   ndusCooldowns.set(token, cooldownUntil);
@@ -1114,8 +1162,8 @@ export default async function handler(req, res) {
             console.log('[Premium] Link is expired or deleted. Skipping token refresh.');
             listData = ndusData;
           } else if (ndusData && ndusData.errno === 400141) {
-            console.warn('[Premium] 400141 token challenge (need verify). Setting 10-min cooldown (token preserved in DB)...');
-            markTokenCooldown(ndusToken, 10 * 60 * 1000);
+            console.warn('[Premium] 400141 token challenge (need verify). Setting 2-hour cooldown (token preserved in DB)...');
+            markTokenCooldown(ndusToken, 2 * 60 * 60 * 1000);
             // Do NOT delete token from MongoDB on temporary 400141 challenge
 
             // Try failover to next active account in pool
