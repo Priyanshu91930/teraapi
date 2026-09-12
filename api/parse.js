@@ -1330,60 +1330,66 @@ export default async function handler(req, res) {
       let dlink = file.dlink || '';
       let verifyV2Url = '';
 
-      if (!dlink && ndusToken && sign && timestamp && listData.share_id && listData.uk && file.fs_id) {
-        const sessionCookie = buildCookie(ndusToken, browserId);
-        
-        // Fetch raw response to check for verify_url on failure
-        const dlUrl = new URL(`${anonApp.params.whost}/share/download`);
-        dlUrl.search = new URLSearchParams({
-          app_id: '250528',
-          web: '1',
-          channel: 'dubian-wap',
-          clienttype: '0',
-          shareid: String(listData.share_id || listData.shareid),
-          uk: String(listData.uk),
-          fid_list: JSON.stringify([file.fs_id]),
-          sign: sign || '',
-          timestamp: String(timestamp || ''),
-          product: 'share',
-          nozip: '0',
-          type: 'dlink',
-        });
-        
-        try {
-          const { request: uRequest } = await import('undici');
-          const proxyDispatcher = getNextProxyAgent();
-
-          const res = await uRequest(dlUrl, {
-            method: 'GET',
-            headers: {
-              'User-Agent': TB_UA,
-              'Referer': `${anonApp.params.whost}/sharing/link?surl=`,
-              'Cookie': sessionCookie,
-            },
-            dispatcher: proxyDispatcher || undefined,
-            signal: AbortSignal.timeout(5000),
+      if (!dlink && sign && timestamp && (listData.share_id || listData.shareid) && listData.uk && file.fs_id) {
+        if (ndusToken) {
+          const sessionCookie = buildCookie(ndusToken, browserId);
+          
+          // Fetch raw response to check for verify_url on failure
+          const dlUrl = new URL(`${anonApp.params.whost}/share/download`);
+          dlUrl.search = new URLSearchParams({
+            app_id: '250528',
+            web: '1',
+            channel: 'dubian-wap',
+            clienttype: '0',
+            shareid: String(listData.share_id || listData.shareid),
+            uk: String(listData.uk),
+            fid_list: JSON.stringify([file.fs_id]),
+            sign: sign || '',
+            timestamp: String(timestamp || ''),
+            product: 'share',
+            nozip: '0',
+            type: 'dlink',
           });
-          const j = await res.body.json();
-          if (j && j.errno === 0 && j.dlink) {
-            dlink = j.dlink;
-          } else {
-            console.log(`[Parse] /share/download fallback failed: errno=${j && j.errno}`);
-            if (j && (j.errno === 400310 || String(j.errmsg || '').includes('verify_v2'))) {
-              verifyV2Url = (j.data && (j.data.verify_url || j.data.verifyUrl)) || '';
+          
+          try {
+            const { request: uRequest } = await import('undici');
+            const proxyDispatcher = getNextProxyAgent();
+
+            const res = await uRequest(dlUrl, {
+              method: 'GET',
+              headers: {
+                'User-Agent': TB_UA,
+                'Referer': `${anonApp.params.whost}/sharing/link?surl=`,
+                'Cookie': sessionCookie,
+              },
+              dispatcher: proxyDispatcher || undefined,
+              signal: AbortSignal.timeout(5000),
+            });
+            const j = await res.body.json();
+            if (j && j.errno === 0 && j.dlink) {
+              dlink = j.dlink;
+            } else {
+              console.log(`[Parse] /share/download fallback failed: errno=${j && j.errno}`);
+              if (j && (j.errno === 400310 || String(j.errmsg || '').includes('verify_v2'))) {
+                verifyV2Url = (j.data && (j.data.verify_url || j.data.verifyUrl)) || '';
+              }
             }
+          } catch (e) {
+            console.log('[Parse] /share/download fallback fetch error:', e.message);
           }
-        } catch (e) {
-          console.log('[Parse] /share/download fallback fetch error:', e.message);
         }
 
-        if (!dlink && ndusToken && !verifyV2Url) {
-          console.log('[Parse] Premium dlink recovery failed. Trying anonymous recovery...');
-          dlink = await resolveDlinkViaShareDownload(
-            anonApp.params.whost, sign, timestamp,
-            listData.share_id || listData.shareid, listData.uk,
-            file.fs_id, `browserid=${browserId}`
-          );
+        if (!dlink && !verifyV2Url) {
+          console.log('[Parse] Premium dlink recovery failed or unavailable. Trying anonymous recovery...');
+          try {
+            dlink = await resolveDlinkViaShareDownload(
+              anonApp.params.whost, sign, timestamp,
+              listData.share_id || listData.shareid, listData.uk,
+              file.fs_id, `browserid=${browserId}`
+            );
+          } catch (anonErr) {
+            console.log('[Parse] Anonymous dlink recovery error:', anonErr.message || anonErr);
+          }
         }
         
         if (!dlink && ndusToken) {
@@ -1392,8 +1398,8 @@ export default async function handler(req, res) {
       }
 
       // Resolve 302 redirect on dlink to produce direct final CDN URL
-      if (dlink && ndusToken) {
-        const sessionCookie = buildCookie(ndusToken, browserId);
+      if (dlink) {
+        const sessionCookie = ndusToken ? buildCookie(ndusToken, browserId) : `browserid=${browserId}`;
         dlink = await resolveCdnUrl(dlink, {
           'User-Agent': TB_UA,
           'Referer': `${anonApp.params.whost}/`,
