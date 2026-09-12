@@ -1,4 +1,5 @@
 import { connectToDatabase, SystemConfig } from '../db.js';
+import { getNdusToken } from './parse.js';
 
 export default async function handler(req, res) {
   // Enable CORS
@@ -22,14 +23,19 @@ export default async function handler(req, res) {
     await connectToDatabase();
 
     if (req.method === 'GET') {
-      // Retrieve current cached token
-      const config = await SystemConfig.findOne({ key: 'TERABOX_NDUS' });
-      const currentToken = config ? config.value : "";
-
       const freeModeConfig = await SystemConfig.findOne({ key: 'USE_FREE_ACCOUNT_ONLY' });
       const freeNdusConfig = await SystemConfig.findOne({ key: 'TERABOX_FREE_NDUS' });
       const envFreeMode = process.env.USE_FREE_ACCOUNT_ONLY || process.env.FREE_MODE_ONLY;
       const freeModeActive = (envFreeMode === 'true' || envFreeMode === '1') || (freeModeConfig && (freeModeConfig.value === 'true' || freeModeConfig.value === '1'));
+
+      // Retrieve current active token from pool (respects Free Mode vs Premium Mode)
+      let currentToken = '';
+      try {
+        currentToken = await getNdusToken();
+      } catch (e) {
+        const config = await SystemConfig.findOne({ key: freeModeActive ? 'TERABOX_FREE_NDUS' : 'TERABOX_NDUS' });
+        currentToken = config ? config.value : "";
+      }
 
       // Obscured version for casual/manual checks
       const obscuredToken = currentToken
@@ -41,10 +47,10 @@ export default async function handler(req, res) {
       return res.status(200).json({
         status: "success",
         use_free_account_only: freeModeActive,
-        free_ndus_configured: !!(freeNdusConfig?.value || process.env.TERABOX_FREE_NDUS),
+        free_ndus_configured: !!(freeNdusConfig?.value || process.env.TERABOX_FREE_NDUS || process.env.TERABOX_FREE_EMAIL),
         cached_ndus: obscuredToken,
         ndus_full: reveal ? currentToken : "",
-        updatedAt: config ? config.updatedAt : null
+        updatedAt: new Date()
       });
     }
 
