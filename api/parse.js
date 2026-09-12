@@ -1123,9 +1123,9 @@ export default async function handler(req, res) {
             console.log('[Premium] Link is expired or deleted. Skipping token refresh.');
             listData = ndusData;
           } else if (ndusData && ndusData.errno === 400141) {
-            console.warn('[Premium] 400141 token challenge (need verify). Purging bad token from MongoDB cache...');
-            markTokenCooldown(ndusToken);
-            removeTokenFromDb(ndusToken).catch(e => {});
+            console.warn('[Premium] 400141 token challenge (need verify). Setting 10-min cooldown (token preserved in DB)...');
+            markTokenCooldown(ndusToken, 10 * 60 * 1000);
+            // Do NOT delete token from MongoDB on temporary 400141 challenge
 
             // Try failover to next active account in pool
             let nextPoolToken = await getNdusToken();
