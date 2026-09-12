@@ -615,16 +615,30 @@ async function resolveDlinkViaShareDownload(whost, sign, timestamp, shareId, uk,
     const { request } = await import('undici');
     const proxyDispatcher = getNextProxyAgent();
 
-    const res = await request(dlUrl, {
-      method: 'GET',
-      headers: {
-        'User-Agent': TB_UA,
-        'Referer': `${whost}/sharing/link?surl=`,
-        'Cookie': cookie || `browserid=${Math.random().toString(36).substring(2)}`,
-      },
-      dispatcher: proxyDispatcher || undefined,
-      signal: AbortSignal.timeout(5000),
-    });
+    let res;
+    try {
+      res = await request(dlUrl, {
+        method: 'GET',
+        headers: {
+          'User-Agent': TB_UA,
+          'Referer': `${whost}/sharing/link?surl=`,
+          'Cookie': cookie || `browserid=${Math.random().toString(36).substring(2)}`,
+        },
+        dispatcher: proxyDispatcher || undefined,
+        signal: AbortSignal.timeout(5000),
+      });
+    } catch (proxyErr) {
+      console.log(`[Parse] Proxy fetch failed (${proxyErr.message}), retrying direct connection...`);
+      res = await request(dlUrl, {
+        method: 'GET',
+        headers: {
+          'User-Agent': TB_UA,
+          'Referer': `${whost}/sharing/link?surl=`,
+          'Cookie': cookie || `browserid=${Math.random().toString(36).substring(2)}`,
+        },
+        signal: AbortSignal.timeout(5000),
+      });
+    }
     
     const j = await res.body.json();
     if (j && j.errno === 0 && j.dlink) {
@@ -1355,16 +1369,31 @@ export default async function handler(req, res) {
             const { request: uRequest } = await import('undici');
             const proxyDispatcher = getNextProxyAgent();
 
-            const res = await uRequest(dlUrl, {
-              method: 'GET',
-              headers: {
-                'User-Agent': TB_UA,
-                'Referer': `${anonApp.params.whost}/sharing/link?surl=`,
-                'Cookie': sessionCookie,
-              },
-              dispatcher: proxyDispatcher || undefined,
-              signal: AbortSignal.timeout(5000),
-            });
+            let res;
+            try {
+              res = await uRequest(dlUrl, {
+                method: 'GET',
+                headers: {
+                  'User-Agent': TB_UA,
+                  'Referer': `${anonApp.params.whost}/sharing/link?surl=`,
+                  'Cookie': sessionCookie,
+                },
+                dispatcher: proxyDispatcher || undefined,
+                signal: AbortSignal.timeout(5000),
+              });
+            } catch (proxyErr) {
+              console.log(`[Parse] Premium proxy fetch failed (${proxyErr.message}), retrying direct...`);
+              res = await uRequest(dlUrl, {
+                method: 'GET',
+                headers: {
+                  'User-Agent': TB_UA,
+                  'Referer': `${anonApp.params.whost}/sharing/link?surl=`,
+                  'Cookie': sessionCookie,
+                },
+                signal: AbortSignal.timeout(5000),
+              });
+            }
+
             const j = await res.body.json();
             if (j && j.errno === 0 && j.dlink) {
               dlink = j.dlink;
