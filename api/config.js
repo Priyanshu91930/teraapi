@@ -50,7 +50,7 @@ export default async function handler(req, res) {
 
     if (req.method === 'POST') {
       const body = req.body || {};
-      const { ndus, free_ndus, use_free_account_only, action } = body;
+      const { ndus, free_ndus, free_email, free_password, use_free_account_only, action } = body;
 
       // Handle updating Free Mode toggle
       if (use_free_account_only !== undefined) {
@@ -60,6 +60,25 @@ export default async function handler(req, res) {
           { upsert: true, new: true }
         );
         console.log(`[Config API] USE_FREE_ACCOUNT_ONLY set to ${use_free_account_only} in MongoDB.`);
+      }
+
+      // Handle updating Free Account credentials
+      if (free_email !== undefined) {
+        await SystemConfig.findOneAndUpdate(
+          { key: 'TERABOX_FREE_EMAIL' },
+          { value: String(free_email).trim(), updatedAt: new Date() },
+          { upsert: true, new: true }
+        );
+        console.log('[Config API] TERABOX_FREE_EMAIL updated in MongoDB.');
+      }
+
+      if (free_password !== undefined) {
+        await SystemConfig.findOneAndUpdate(
+          { key: 'TERABOX_FREE_PASSWORD' },
+          { value: String(free_password).trim(), updatedAt: new Date() },
+          { upsert: true, new: true }
+        );
+        console.log('[Config API] TERABOX_FREE_PASSWORD updated in MongoDB.');
       }
 
       // Handle updating Free Account NDUS token

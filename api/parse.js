@@ -80,19 +80,89 @@ export async function isFreeAccountOnlyMode() {
   return false;
 }
 
-// Helper to get Free TeraBox ndus token from DB or Env
-export async function getFreeNdusToken() {
+// Helper to get Free TeraBox account email and password credentials from DB or Env
+export async function getFreeCredentials() {
+  let email = process.env.TERABOX_FREE_EMAIL || process.env.TERABOX_FREE_USER;
+  let password = process.env.TERABOX_FREE_PASSWORD || process.env.TERABOX_FREE_PASS;
+
+  try {
+    await connectToDatabase();
+    if (!email) {
+      const emailConfig = await SystemConfig.findOne({ key: 'TERABOX_FREE_EMAIL' }) || await SystemConfig.findOne({ key: 'TERABOX_FREE_USER' });
+      if (emailConfig && emailConfig.value) email = emailConfig.value.trim();
+    }
+    if (!password) {
+      const passConfig = await SystemConfig.findOne({ key: 'TERABOX_FREE_PASSWORD' }) || await SystemConfig.findOne({ key: 'TERABOX_FREE_PASS' });
+      if (passConfig && passConfig.value) password = passConfig.value.trim();
+    }
+  } catch (e) {}
+
+  if (email && password) {
+    return { email: email.trim(), password: password.trim() };
+  }
+  return null;
+}
+
+// Helper to get Free TeraBox ndus token from DB, Env, or auto-login with Free credentials
+export async function getFreeNdusToken(whost = 'https://www.1024terabox.com') {
+  // 1. Check MongoDB SystemConfig for TERABOX_FREE_NDUS
   try {
     await connectToDatabase();
     const config = await SystemConfig.findOne({ key: 'TERABOX_FREE_NDUS' });
     if (config && config.value && config.value.trim()) {
-      return config.value.trim();
+      const token = config.value.trim();
+      const cooldownUntil = ndusCooldowns.get(token) || 0;
+      if (Date.now() >= cooldownUntil) {
+        return token;
+      } else {
+        console.warn(`[NDUS Pool] Free NDUS token is currently on cooldown due to 400141 challenge.`);
+      }
     }
   } catch (e) {}
 
+  // 2. Check process.env for TERABOX_FREE_NDUS
   const freeEnv = process.env.TERABOX_FREE_NDUS || process.env.FREE_NDUS || process.env.NDUS_FREE;
   if (freeEnv && freeEnv.trim()) {
-    return freeEnv.trim();
+    const token = freeEnv.trim();
+    const cooldownUntil = ndusCooldowns.get(token) || 0;
+    if (Date.now() >= cooldownUntil) {
+      return token;
+    }
+  }
+
+  // 3. Auto-login using Free Account Email & Password credentials if token is missing or on cooldown
+  const freeCreds = await getFreeCredentials();
+  if (freeCreds) {
+    console.log(`[NDUS Pool] Running auto-login for Free TeraBox account (${freeCreds.email})...`);
+    try {
+      const app = new TeraBoxApp('');
+      app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+      const tbDomains = ['1024tera','1024terabox','terasharefile','terashare','terasharelink','nephobox','teraboxapp','tibbox','tibibox','freeterabox','teraboxlink','mirrobox','4funbox','terabox.fun','momerybox','terabox.app','terabox.ap','dubox','terabox.best','teraboxshare','terafileshare','1024box'];
+      app.TERABOX_DOMAIN = tbDomains.some(d => whost.includes(d)) ? '1024terabox.com' : 'terabox.com';
+      app.params.whost = whost;
+      app.params.uhost = whost;
+
+      const preLoginData = await app.passportPreLogin(freeCreds.email);
+      const loginRes = await app.passportLogin(preLoginData, freeCreds.email, freeCreds.password);
+
+      if (loginRes.code === 0 && loginRes.data && loginRes.data.ndus) {
+        const fullCookies = loginRes.data.cookies || `ndus=${loginRes.data.ndus}`;
+        console.log(`[NDUS Pool] Free Account auto-login SUCCESS for ${freeCreds.email}!`);
+        try {
+          await connectToDatabase();
+          await SystemConfig.findOneAndUpdate(
+            { key: 'TERABOX_FREE_NDUS' },
+            { value: fullCookies, updatedAt: new Date() },
+            { upsert: true }
+          );
+        } catch (e) {}
+        return fullCookies;
+      } else {
+        console.error(`[NDUS Pool] Free Account auto-login failed for ${freeCreds.email}:`, JSON.stringify(loginRes));
+      }
+    } catch (err) {
+      console.error(`[NDUS Pool] Free Account auto-login error:`, err.message);
+    }
   }
 
   return '';
@@ -102,12 +172,12 @@ async function getAllNdusTokens(whost = 'https://www.1024terabox.com') {
   // Check if Free Account Only mode is triggered
   const freeModeActive = await isFreeAccountOnlyMode();
   if (freeModeActive) {
-    const freeToken = await getFreeNdusToken();
+    const freeToken = await getFreeNdusToken(whost);
     if (freeToken) {
       console.log(`[NDUS Pool] FREE MODE ACTIVE (USE_FREE_ACCOUNT_ONLY=true). Using Free TeraBox Account token.`);
       return [freeToken];
     } else {
-      console.warn(`[NDUS Pool] FREE MODE ACTIVE but TERABOX_FREE_NDUS is not set in Vercel Env or MongoDB.`);
+      console.warn(`[NDUS Pool] FREE MODE ACTIVE but TERABOX_FREE_NDUS / TERABOX_FREE_EMAIL is not set in Vercel Env or MongoDB.`);
     }
   }
 
