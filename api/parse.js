@@ -1559,7 +1559,8 @@ export default async function handler(req, res) {
         // This prevents TeraBox "31362 sign error" when opened in external browsers/video players without cookies
         if (dlink && !dlink.includes('teraboxdownloader.co.in')) {
           const b64Dl = Buffer.from(dlink).toString('base64');
-          dlink = `https://teraboxdownloader.co.in/download.php?url=${encodeURIComponent(b64Dl)}&b64=1`;
+          const safeName = file.server_filename || 'video.mp4';
+          dlink = `https://teraboxdownloader.co.in/download.php?url=${encodeURIComponent(b64Dl)}&b64=1&filename=${encodeURIComponent(safeName)}`;
         }
       }
 
@@ -1569,7 +1570,8 @@ export default async function handler(req, res) {
           const shareId = listData.share_id || listData.shareid || '';
           const rawDownloadUrl = `${anonApp.params.whost}/share/download?app_id=250528&web=1&channel=dubian-wap&clienttype=0&fid_list=%5B${file.fs_id}%5D&uk=${listData.uk}&shareid=${shareId}&sign=${sign}&timestamp=${timestamp}&type=dlink`;
           const b64Dl = Buffer.from(rawDownloadUrl).toString('base64');
-          dlink = `https://teraboxdownloader.co.in/download.php?url=${encodeURIComponent(b64Dl)}&b64=1`;
+          const safeName = file.server_filename || 'video.mp4';
+          dlink = `https://teraboxdownloader.co.in/download.php?url=${encodeURIComponent(b64Dl)}&b64=1&filename=${encodeURIComponent(safeName)}`;
           console.log(`[Parse] Failsafe proxy dlink constructed: ${dlink.substring(0, 80)}...`);
         } catch (fallbackErr) {
           console.error('[Parse] Failsafe proxy dlink construction failed:', fallbackErr.message);
