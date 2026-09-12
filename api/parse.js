@@ -12,29 +12,9 @@ function getBrowserIdForToken(token) {
   return 'b_' + crypto.createHash('md5').update(String(token).trim()).digest('hex');
 }
 
-// Proxy servers list (disabled by default to prevent IP-hopping anti-bot flags)
-const PROXIES_LIST = [
-  'http://nmuyefes:rj0msq6m8t3g@31.59.20.176:6754',
-  'http://nmuyefes:rj0msq6m8t3g@45.38.107.97:6014',
-  'http://nmuyefes:rj0msq6m8t3g@198.105.121.200:6462',
-  'http://nmuyefes:rj0msq6m8t3g@64.137.96.74:6641',
-  'http://nmuyefes:rj0msq6m8t3g@198.23.243.226:6361',
-  'http://nmuyefes:rj0msq6m8t3g@38.154.185.97:6370',
-  'http://nmuyefes:rj0msq6m8t3g@84.247.60.125:6095',
-  'http://nmuyefes:rj0msq6m8t3g@142.111.67.146:5611',
-  'http://nmuyefes:rj0msq6m8t3g@191.96.254.138:6185',
-  'http://nmuyefes:rj0msq6m8t3g@31.58.9.4:6077'
-];
-
-let proxyIndex = 0;
-
-// Helper to get next ProxyAgent (only if ENABLE_PROXY === 'true')
+// Proxy function permanently disabled (Direct Connection active to prevent IP hopping)
 function getNextProxyAgent() {
-  if (process.env.ENABLE_PROXY !== 'true' || PROXIES_LIST.length === 0) return null;
-  const proxyUrl = PROXIES_LIST[proxyIndex];
-  proxyIndex = (proxyIndex + 1) % PROXIES_LIST.length;
-  console.log(`[Proxy Rotator] Routing request via proxy: ${proxyUrl.split('@')[1] || proxyUrl}`);
-  return new ProxyAgent(proxyUrl);
+  return null;
 }
 
 function formatBytes(bytes, decimals = 2) {
