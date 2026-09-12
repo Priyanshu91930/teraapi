@@ -589,22 +589,9 @@ async function resolveCdnUrl(dlink, headers) {
 
 const TB_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-// Telegram alert on ndus token expiry
+// Telegram alert disabled
 async function sendTelegramTokenAlert() {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
-  const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || process.env.CHAT_ID || "1892511025"; // Fallback to user ID from logs
-  if (!botToken || !adminChatId) return;
-  console.log(`[Telegram Alert] Sending token expiry warning to admin chat: ${adminChatId}`);
-  fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-    method: 'POST',
-    signal: AbortSignal.timeout(5000),
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: adminChatId,
-      text: `⚠️ <b>TeraBox Premium Token Expired!</b>\n\nThe premium cookie session (ndus) has expired or been blocked by TeraBox. The API is temporarily running in public/anonymous fallback mode.\n\nPlease update <b>TERABOX_NDUS</b> in Vercel settings and redeploy immediately.`,
-      parse_mode: 'HTML'
-    })
-  }).catch(err => console.error('[Telegram Alert] Failed:', err.message));
+  return;
 }
 
 // Recover dlink via /share/download when /share/list omits it.
@@ -1188,11 +1175,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // Trigger Telegram notification if token expiry is detected
-    if (tokenExpiredDetected) {
-      sendTelegramTokenAlert().catch(err => console.error('[Telegram] Alert failed:', err.message));
-      tokenExpiredDetected = false;
-    }
+    tokenExpiredDetected = false;
 
     // Failsafe Fallback: If both failed, but anonymous returned a list (even without dlink), use it as fallback
     if ((!listData || listData.errno !== 0) && listData && listData.list) {
