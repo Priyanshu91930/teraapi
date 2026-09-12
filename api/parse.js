@@ -4,8 +4,15 @@ import { youtube, igdl, ttdl, fbdown } from 'btch-downloader';
 import { recordPageView, connectToDatabase, ApiSubscription, SystemConfig, LinkCache, User } from '../db.js';
 import { verifySessionToken } from './auth/me.js';
 import { ProxyAgent } from 'undici';
+import crypto from 'node:crypto';
 
-// Rotating proxy servers list (with credentials)
+// Deterministic browserId fingerprint generator bound to account token
+function getBrowserIdForToken(token) {
+  if (!token) return 'b_anon_default_session_id';
+  return 'b_' + crypto.createHash('md5').update(String(token).trim()).digest('hex');
+}
+
+// Proxy servers list (disabled by default to prevent IP-hopping anti-bot flags)
 const PROXIES_LIST = [
   'http://nmuyefes:rj0msq6m8t3g@31.59.20.176:6754',
   'http://nmuyefes:rj0msq6m8t3g@45.38.107.97:6014',
@@ -21,9 +28,9 @@ const PROXIES_LIST = [
 
 let proxyIndex = 0;
 
-// Helper to get next ProxyAgent in round-robin fashion
+// Helper to get next ProxyAgent (only if ENABLE_PROXY === 'true')
 function getNextProxyAgent() {
-  if (PROXIES_LIST.length === 0) return null;
+  if (process.env.ENABLE_PROXY !== 'true' || PROXIES_LIST.length === 0) return null;
   const proxyUrl = PROXIES_LIST[proxyIndex];
   proxyIndex = (proxyIndex + 1) % PROXIES_LIST.length;
   console.log(`[Proxy Rotator] Routing request via proxy: ${proxyUrl.split('@')[1] || proxyUrl}`);
@@ -1068,9 +1075,6 @@ export default async function handler(req, res) {
       TERABOX_DOMAIN: '1024terabox.com'
     };
 
-    // Generate a single browserid session token early
-    const browserId = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
-
     // ── TIER-BASED ROUTING ────────────────────────────────────────────────────
     // PAID users → Premium NDUS route (fast CDN, streaming, dlink recovery)
     // FREE users → Anonymous-only route (NO ndus, NO premium fallback)
@@ -1081,6 +1085,7 @@ export default async function handler(req, res) {
     let premiumApp = null; // Will hold the authenticated TeraBoxApp instance for folder listing
     let usedAnonymousFallback = false;
     let activeWorkingNdusToken = '';
+    let browserId = getBrowserIdForToken('');
 
     if (isPremium) {
       // ── PREMIUM ROUTE ──
@@ -1088,12 +1093,15 @@ export default async function handler(req, res) {
       console.log('[ROUTER] Using premium route (NDUS session)...');
       let ndusToken = await getNdusToken();
       activeWorkingNdusToken = ndusToken;
+      browserId = getBrowserIdForToken(ndusToken);
       let autoLoginAttempted = false;
 
       // Bootstrap: no token anywhere? Try auto-login for self-start.
       if (!ndusToken) {
         console.log('[Premium] No ndus token found. Trying credential bootstrap...');
         ndusToken = await refreshNdusToken(anonApp.params.whost) || '';
+        activeWorkingNdusToken = ndusToken;
+        browserId = getBrowserIdForToken(ndusToken);
         autoLoginAttempted = true;
       }
 
@@ -1141,6 +1149,7 @@ export default async function handler(req, res) {
               console.log('[Premium] Switching to alternate account after 400141 challenge...');
               ndusToken = nextPoolToken;
               activeWorkingNdusToken = nextPoolToken;
+              browserId = getBrowserIdForToken(ndusToken);
               app = new TeraBoxApp(buildCookie(ndusToken, browserId));
               app.params.ua = anonApp.params.ua;
               app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
