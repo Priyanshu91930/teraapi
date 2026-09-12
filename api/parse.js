@@ -78,7 +78,7 @@ function getConfiguredCredentials() {
 async function getAllNdusTokens(whost = 'https://www.1024terabox.com') {
   const tokens = [];
   
-  // 1. Primary Source: Read active tokens from MongoDB config cache (updated dynamically by auto-login)
+  // 1. Read active tokens from MongoDB config cache
   try {
     await connectToDatabase();
     const config = await SystemConfig.findOne({ key: 'TERABOX_NDUS' });
@@ -97,24 +97,21 @@ async function getAllNdusTokens(whost = 'https://www.1024terabox.com') {
     console.error('[NDUS Cache] Failed to fetch multi-account from DB:', err.message);
   }
 
-  // 2. Secondary Fallback: Only read from static Vercel Env variables if MongoDB cache is empty
-  if (tokens.length === 0) {
-    const envKeys = Object.keys(process.env).filter(k => /^TERABOX_NDUS/i.test(k) || /^NDUS/i.test(k) || /^NUDUS/i.test(k));
-    for (const k of envKeys) {
-      const val = process.env[k];
-      if (val && typeof val === 'string') {
-        val.split(',').map(t => t.trim()).filter(Boolean).forEach(t => {
-          if (!tokens.includes(t)) tokens.push(t);
-        });
-      }
+  // 2. Read from static Vercel Env variables (TERABOX_NDUS, TERABOX_NDUS_1, etc.)
+  const envKeys = Object.keys(process.env).filter(k => /^TERABOX_NDUS/i.test(k) || /^NDUS/i.test(k) || /^NUDUS/i.test(k));
+  for (const k of envKeys) {
+    const val = process.env[k];
+    if (val && typeof val === 'string') {
+      val.split(',').map(t => t.trim()).filter(Boolean).forEach(t => {
+        if (!tokens.includes(t)) tokens.push(t);
+      });
     }
   }
 
-  // 3. Auto-bootstrap: If MongoDB cache has NO active tokens at all (tokens.length === 0), trigger passport login refresh to generate tokens.
-  // CRITICAL: Do NOT run auto-login if we already have working tokens in DB (tokens.length >= 1), otherwise bad/challenged accounts will be repeatedly re-logged.
+  // 3. Auto-bootstrap: Only trigger auto-login if NO manual token or DB token exists at all (tokens.length === 0)
   const credentials = getConfiguredCredentials();
   if (credentials.length > 0 && tokens.length === 0 && whost) {
-    console.log(`[NDUS Pool] No active tokens in MongoDB cache. Running auto-login for all ${credentials.length} configured account(s)...`);
+    console.log(`[NDUS Pool] No active tokens in MongoDB or env. Running auto-login for configured account(s)...`);
     const freshToken = await refreshNdusToken(whost);
     if (freshToken) {
       try {
