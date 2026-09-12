@@ -78,18 +78,7 @@ function getConfiguredCredentials() {
 async function getAllNdusTokens(whost = 'https://www.1024terabox.com') {
   const tokens = [];
   
-  // 1. Read from Env variables (TERABOX_NDUS, TERABOX_NDUS_1, TERABOX_NDUS_2, comma-separated lists, etc.)
-  const envKeys = Object.keys(process.env).filter(k => /^TERABOX_NDUS/i.test(k) || /^NDUS/i.test(k) || /^NUDUS/i.test(k));
-  for (const k of envKeys) {
-    const val = process.env[k];
-    if (val && typeof val === 'string') {
-      val.split(',').map(t => t.trim()).filter(Boolean).forEach(t => {
-        if (!tokens.includes(t)) tokens.push(t);
-      });
-    }
-  }
-
-  // 2. Read from MongoDB config cache
+  // 1. Primary Source: Read active tokens from MongoDB config cache (updated dynamically by auto-login)
   try {
     await connectToDatabase();
     const config = await SystemConfig.findOne({ key: 'TERABOX_NDUS' });
@@ -104,19 +93,21 @@ async function getAllNdusTokens(whost = 'https://www.1024terabox.com') {
         if (!tokens.includes(t)) tokens.push(t);
       });
     }
-    const multiConfig = await SystemConfig.findOne({ key: 'TERABOX_ACCOUNTS' });
-    if (multiConfig && multiConfig.value) {
-      let parsed = [];
-      try {
-        if (multiConfig.value.startsWith('[')) parsed = JSON.parse(multiConfig.value);
-        else parsed = multiConfig.value.split('|||');
-      } catch (e) { parsed = [multiConfig.value]; }
-      parsed.map(t => typeof t === 'string' ? t.trim() : '').filter(Boolean).forEach(t => {
-        if (!tokens.includes(t)) tokens.push(t);
-      });
-    }
   } catch (err) {
     console.error('[NDUS Cache] Failed to fetch multi-account from DB:', err.message);
+  }
+
+  // 2. Secondary Fallback: Only read from static Vercel Env variables if MongoDB cache is empty
+  if (tokens.length === 0) {
+    const envKeys = Object.keys(process.env).filter(k => /^TERABOX_NDUS/i.test(k) || /^NDUS/i.test(k) || /^NUDUS/i.test(k));
+    for (const k of envKeys) {
+      const val = process.env[k];
+      if (val && typeof val === 'string') {
+        val.split(',').map(t => t.trim()).filter(Boolean).forEach(t => {
+          if (!tokens.includes(t)) tokens.push(t);
+        });
+      }
+    }
   }
 
   // 3. Auto-bootstrap: If MongoDB cache has NO active tokens at all (tokens.length === 0), trigger passport login refresh to generate tokens.
@@ -606,7 +597,7 @@ async function sendTelegramTokenAlert() {
   console.log(`[Telegram Alert] Sending token expiry warning to admin chat: ${adminChatId}`);
   fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: 'POST',
-    signal: AbortSignal.timeout(2000),
+    signal: AbortSignal.timeout(5000),
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       chat_id: adminChatId,
