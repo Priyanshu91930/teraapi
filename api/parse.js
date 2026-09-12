@@ -1068,6 +1068,9 @@ export default async function handler(req, res) {
       TERABOX_DOMAIN: '1024terabox.com'
     };
 
+    // Generate a single browserid session token early
+    const browserId = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+
     // ── TIER-BASED ROUTING ────────────────────────────────────────────────────
     // PAID users → Premium NDUS route (fast CDN, streaming, dlink recovery)
     // FREE users → Anonymous-only route (NO ndus, NO premium fallback)
@@ -1095,7 +1098,7 @@ export default async function handler(req, res) {
       }
 
       if (ndusToken) {
-        let app = new TeraBoxApp(ndusToken);
+        let app = new TeraBoxApp(buildCookie(ndusToken, browserId));
         app.params.ua = anonApp.params.ua;
         app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
         app.params.whost = anonApp.params.whost;
@@ -1138,7 +1141,7 @@ export default async function handler(req, res) {
               console.log('[Premium] Switching to alternate account after 400141 challenge...');
               ndusToken = nextPoolToken;
               activeWorkingNdusToken = nextPoolToken;
-              app = new TeraBoxApp(ndusToken);
+              app = new TeraBoxApp(buildCookie(ndusToken, browserId));
               app.params.ua = anonApp.params.ua;
               app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
               app.params.whost = anonApp.params.whost;
@@ -1256,9 +1259,6 @@ export default async function handler(req, res) {
     if (!isPremium) {
       console.log('[ROUTER] Free tier: ndusToken withheld. Streaming and premium dlink will be skipped.');
     }
-
-    // Generate a single browserid session token
-    const browserId = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
 
     // Fetch the correct sign and timestamp metadata for streaming using direct request with browserid
     let sign = '';
