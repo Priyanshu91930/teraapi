@@ -528,19 +528,32 @@ export async function refreshNdusToken(whost) {
       }
 
       if (generatedTokens.length > 0) {
-        // Save generated tokens to MongoDB persistently
+        // Save generated tokens to MongoDB persistently (merge with existing manual tokens)
         try {
+          const config = await SystemConfig.findOne({ key: 'TERABOX_NDUS' });
+          let mergedTokens = [...generatedTokens];
+          if (config && config.value) {
+            let existing = [];
+            try {
+              if (config.value.startsWith('[')) existing = JSON.parse(config.value);
+              else if (config.value.includes('|||')) existing = config.value.split('|||');
+              else existing = config.value.split(',');
+            } catch (e) { existing = [config.value]; }
+            existing.map(t => typeof t === 'string' ? t.trim() : '').filter(Boolean).forEach(t => {
+              if (!mergedTokens.includes(t)) mergedTokens.push(t);
+            });
+          }
           await SystemConfig.findOneAndUpdate(
             { key: 'TERABOX_NDUS' },
-            { value: JSON.stringify(generatedTokens), updatedAt: new Date() },
+            { value: JSON.stringify(mergedTokens), updatedAt: new Date() },
             { upsert: true }
           );
           await SystemConfig.findOneAndUpdate(
             { key: 'TERABOX_ACCOUNTS' },
-            { value: JSON.stringify(generatedTokens), updatedAt: new Date() },
+            { value: JSON.stringify(mergedTokens), updatedAt: new Date() },
             { upsert: true }
           );
-          console.log(`[NDUS Auto-Login] Saved ${generatedTokens.length} full cookie token(s) to MongoDB configuration cache.`);
+          console.log(`[NDUS Auto-Login] Saved ${mergedTokens.length} full cookie token(s) to MongoDB configuration cache.`);
         } catch (dbErr) {
           console.error('[NDUS Auto-Login] Failed to save to MongoDB:', dbErr.message);
         }
