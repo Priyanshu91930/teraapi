@@ -1560,18 +1560,19 @@ export default async function handler(req, res) {
         if (dlink && !dlink.includes('teraboxdownloader.co.in')) {
           const b64Dl = Buffer.from(dlink).toString('base64');
           const safeName = file.server_filename || 'video.mp4';
-          dlink = `https://teraboxdownloader.co.in/download.php?url=${encodeURIComponent(b64Dl)}&b64=1&download=1&type=download&filename=${encodeURIComponent(safeName)}`;
+          const sessionCookie = ndusToken ? buildCookie(ndusToken, browserId) : `browserid=${browserId}`;
+          dlink = `https://teraboxdownloader.co.in/download.php?url=${encodeURIComponent(b64Dl)}&b64=1&download=1&type=download&filename=${encodeURIComponent(safeName)}&cookie=${encodeURIComponent(sessionCookie)}`;
         }
       }
 
-      // Failsafe Fallback: If direct dlink recovery failed (due to 400141 / 400310 rate limits), construct proxied download URL via Hostinger download.php
+      // Failsafe Fallback: If direct dlink recovery failed (due to 400141 / 400310 rate limits), construct proxied download URL via VPS /download endpoint
       if (!dlink && sign && timestamp && (listData.share_id || listData.shareid) && listData.uk && file.fs_id) {
         try {
           const shareId = listData.share_id || listData.shareid || '';
           const rawDownloadUrl = `${anonApp.params.whost}/share/download?app_id=250528&web=1&channel=dubian-wap&clienttype=0&fid_list=%5B${file.fs_id}%5D&uk=${listData.uk}&shareid=${shareId}&sign=${sign}&timestamp=${timestamp}&type=dlink`;
-          const b64Dl = Buffer.from(rawDownloadUrl).toString('base64');
           const safeName = file.server_filename || 'video.mp4';
-          dlink = `https://teraboxdownloader.co.in/download.php?url=${encodeURIComponent(b64Dl)}&b64=1&download=1&type=download&filename=${encodeURIComponent(safeName)}`;
+          const sessionCookie = ndusToken ? buildCookie(ndusToken, browserId) : `browserid=${browserId}`;
+          dlink = `https://api.teraboxdownloader.co.in/download?url=${encodeURIComponent(rawDownloadUrl)}&filename=${encodeURIComponent(safeName)}`;
           console.log(`[Parse] Failsafe proxy dlink constructed: ${dlink.substring(0, 80)}...`);
         } catch (fallbackErr) {
           console.error('[Parse] Failsafe proxy dlink construction failed:', fallbackErr.message);
