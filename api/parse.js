@@ -1601,7 +1601,7 @@ export default async function handler(req, res) {
           const rawDownloadUrl = `${anonApp.params.whost}/share/download?app_id=250528&web=1&channel=dubian-wap&clienttype=0&fid_list=%5B${file.fs_id}%5D&uk=${listData.uk}&shareid=${shareId}&sign=${sign}&timestamp=${timestamp}&type=dlink`;
           const safeName = file.server_filename || 'video.mp4';
           const sessionCookie = ndusToken ? buildCookie(ndusToken, browserId) : `browserid=${browserId}`;
-          dlink = `https://api.teraboxdownloader.co.in/download?url=${encodeURIComponent(rawDownloadUrl)}&filename=${encodeURIComponent(safeName)}`;
+          dlink = `https://api.teraboxdownloader.co.in/download?url=${encodeURIComponent(rawDownloadUrl)}&filename=${encodeURIComponent(safeName)}&cookie=${encodeURIComponent(sessionCookie)}`;
           console.log(`[Parse] Failsafe proxy dlink constructed: ${dlink.substring(0, 80)}...`);
         } catch (fallbackErr) {
           console.error('[Parse] Failsafe proxy dlink construction failed:', fallbackErr.message);

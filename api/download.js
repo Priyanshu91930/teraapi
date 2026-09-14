@@ -137,18 +137,34 @@ export default async function handler(req, res) {
     'Accept': '*/*',
     'Referer': referer,
   };
-  if (ndusToken) headers['Cookie'] = ndusToken.includes('=') ? ndusToken : `ndus=${ndusToken}`;
+  const queryCookie = req.query.cookie;
+  const sessionCookie = queryCookie || ndusToken || "";
+  if (sessionCookie) headers['Cookie'] = sessionCookie.includes('=') ? sessionCookie : `ndus=${sessionCookie}`;
 
   const range = req.headers['range'];
   if (range) headers['Range'] = range;
 
   let upstream;
   try {
-    upstream = await fetch(url, { headers, redirect: 'follow' });
+    // Perform manual redirect handling to prevent fetch from stripping cross-domain Cookie headers
+    upstream = await fetch(url, { headers, redirect: 'manual' });
+    if ([301, 302, 303, 307, 308].includes(upstream.status)) {
+      const location = upstream.headers.get('location');
+      if (location) {
+        console.log(`[Vercel Download Proxy] Following redirect to CDN with session cookie preserved: ${location.substring(0, 80)}...`);
+        upstream = await fetch(location, { headers, redirect: 'manual' });
+        if ([301, 302, 303, 307, 308].includes(upstream.status)) {
+          const secondLoc = upstream.headers.get('location');
+          if (secondLoc) {
+            upstream = await fetch(secondLoc, { headers, redirect: 'follow' });
+          }
+        }
+      }
+    }
   } catch (e) {
     return res.status(502).json({ error: 'Failed to reach upstream: ' + e.message });
   }
-  if (!upstream.ok) {
+  if (!upstream.ok && upstream.status !== 206) {
     return res.status(upstream.status).json({ error: `Upstream returned HTTP ${upstream.status}` });
   }
 

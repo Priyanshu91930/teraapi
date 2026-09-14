@@ -311,7 +311,7 @@ app.get('/parse', async (req, res) => {
 });
 
 app.get('/download', async (req, res) => {
-  const { url, filename } = req.query;
+  const { url, filename, cookie } = req.query;
 
   if (!url) {
     return res.status(400).json({ error: "url query parameter is required" });
@@ -324,24 +324,41 @@ app.get('/download', async (req, res) => {
     return res.status(400).json({ error: "Invalid download URL" });
   }
 
-  const ndusToken = process.env.TERABOX_NDUS || process.env.NDUS || process.env.ndus || process.env.NUDUS || process.env.nudus || "";
+  // Get active ndus session cookie from query, headers, or token pool
+  const sessionCookie = cookie || req.headers['cookie'] || (await getNdusToken()) || process.env.TERABOX_NDUS || "";
   const headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Accept': '*/*',
-    'Referer': 'https://www.terabox.com/',
+    'Referer': 'https://www.1024terabox.com/',
   };
-  if (ndusToken) headers['Cookie'] = `ndus=${ndusToken}`;
+  if (sessionCookie) {
+    headers['Cookie'] = sessionCookie.includes('=') ? sessionCookie : `ndus=${sessionCookie}`;
+  }
 
   const range = req.headers['range'];
   if (range) headers['Range'] = range;
 
   let upstream;
   try {
-    upstream = await fetch(url, { headers, redirect: 'follow' });
+    // Perform manual redirect handling to prevent fetch from stripping cross-domain Cookie headers
+    upstream = await fetch(url, { headers, redirect: 'manual' });
+    if ([301, 302, 303, 307, 308].includes(upstream.status)) {
+      const location = upstream.headers.get('location');
+      if (location) {
+        console.log(`[VPS Proxy Download] Following redirect to CDN with session cookie preserved: ${location.substring(0, 80)}...`);
+        upstream = await fetch(location, { headers, redirect: 'manual' });
+        if ([301, 302, 303, 307, 308].includes(upstream.status)) {
+          const secondLoc = upstream.headers.get('location');
+          if (secondLoc) {
+            upstream = await fetch(secondLoc, { headers, redirect: 'follow' });
+          }
+        }
+      }
+    }
   } catch (e) {
     return res.status(502).json({ error: 'Failed to reach upstream: ' + e.message });
   }
-  if (!upstream.ok) {
+  if (!upstream.ok && upstream.status !== 206) {
     return res.status(upstream.status).json({ error: `Upstream returned HTTP ${upstream.status}` });
   }
 
