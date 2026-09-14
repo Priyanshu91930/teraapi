@@ -1,11 +1,5 @@
 import mongoose from 'mongoose';
 
-const MONGODB_URI = process.env.MONGODB_URI;
-
-if (!MONGODB_URI) {
-  console.log('[DB] Warning: MONGODB_URI environment variable is missing.');
-}
-
 let cached = global.mongoose;
 
 if (!cached) {
@@ -13,7 +7,11 @@ if (!cached) {
 }
 
 export async function connectToDatabase() {
-  if (!MONGODB_URI) return null;
+  const uri = process.env.MONGODB_URI;
+  if (!uri) {
+    console.error('[DB] Warning: MONGODB_URI environment variable is missing.');
+    return null;
+  }
   if (cached.conn) {
     return cached.conn;
   }
@@ -23,7 +21,7 @@ export async function connectToDatabase() {
       bufferCommands: false,
     };
 
-    cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongooseInstance) => {
+    cached.promise = mongoose.connect(uri, opts).then((mongooseInstance) => {
       console.log('[DB] Connected to MongoDB.');
       return mongooseInstance;
     });

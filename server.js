@@ -6,22 +6,30 @@ import ytdl from '@distube/ytdl-core';
 import { youtube, igdl, ttdl, fbdown } from 'btch-downloader';
 import { connectToDatabase, Stat, incrementStat, recordPageView } from './db.js';
 
-// Minimal .env loader for local runs (Vercel injects env vars itself)
+// Minimal .env loader for local runs (handles Windows \r\n and Linux \n)
 try {
   const envFile = fs.readFileSync(new URL('./.env', import.meta.url), 'utf8');
-  for (const line of envFile.split('\n')) {
-    const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
-    if (m && !line.trim().startsWith('#') && process.env[m[1]] === undefined) {
-      process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+  for (const line of envFile.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    const m = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (m && !trimmed.startsWith('#') && process.env[m[1]] === undefined) {
+      process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, '');
     }
   }
-} catch {}
+} catch (e) {
+  console.error('[ENV] Error loading .env file:', e.message);
+}
+
+import parseHandler from './api/parse.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
+
+app.all('/parse', (req, res) => parseHandler(req, res));
+app.all('/api/parse', (req, res) => parseHandler(req, res));
 
 // API Key Verification Middleware for security (excludes /privacy)
 const verifyApiKey = (req, res, next) => {
