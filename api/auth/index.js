@@ -119,6 +119,12 @@ export default async function handler(req, res) {
                 } catch (err) {}
             }
 
+            if (returnUrl === 'app' || returnUrl.startsWith('teraapp://')) {
+                const appRedirect = `teraapp://auth?token=${sessionToken}&email=${encodeURIComponent(user.email)}&name=${encodeURIComponent(user.name || '')}&avatar=${encodeURIComponent(user.avatar || '')}`;
+                console.log(`[Google OAuth] Redirecting back to React Native App: ${appRedirect}`);
+                return res.redirect(appRedirect);
+            }
+
             const cleanReturnUrl = returnUrl.startsWith('http') 
                 ? returnUrl 
                 : `https://${site_domain}${returnUrl}`;
