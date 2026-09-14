@@ -240,7 +240,7 @@ async function getAllNdusTokens(whost = 'https://www.1024terabox.com') {
   return tokens;
 }
 
-// Function to get the active ndus token from pool using Sticky Allocation (stays on Account 1 until 400141)
+// Function to get the active ndus token from pool using IST Day-based Rotation with automatic failover
 export async function getNdusToken(whost = 'https://www.1024terabox.com') {
   const tokens = await getAllNdusTokens(whost);
   if (tokens.length === 0) return '';
@@ -253,9 +253,14 @@ export async function getNdusToken(whost = 'https://www.1024terabox.com') {
 
   // Fallback to all configured tokens if all available tokens are marked on cooldown
   const activeTokens = availableTokens.length > 0 ? availableTokens : tokens;
-  const selectedToken = activeTokens[0];
+  
+  // IST Day-based rotation (Day 1 -> Account 1, Day 2 -> Account 2, etc.)
+  const istDateStr = new Date().toLocaleDateString("en-US", { timeZone: "Asia/Kolkata" });
+  const dayNum = new Date(istDateStr).getDate() || 1;
+  const selectedIndex = (dayNum - 1) % activeTokens.length;
+  const selectedToken = activeTokens[selectedIndex];
 
-  console.log(`[NDUS Pool] Using active NDUS token (${activeTokens.length} available, ${tokens.length} total in pool)`);
+  console.log(`[NDUS Pool] 📅 Day-based rotation: Day ${dayNum} IST → Account ${selectedIndex + 1} selected (${activeTokens.length} available, ${tokens.length} total)`);
   return selectedToken;
 }
 
