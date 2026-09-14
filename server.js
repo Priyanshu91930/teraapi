@@ -47,6 +47,20 @@ app.use('/track', verifyApiKey);
 app.use('/download', verifyApiKey);
 
 
+let cachedPublicIp = null;
+async function getPublicIp() {
+  if (cachedPublicIp) return cachedPublicIp;
+  try {
+    const res = await fetch('https://api.ipify.org?format=json', { signal: AbortSignal.timeout(3000) });
+    const data = await res.json();
+    if (data && data.ip) {
+      cachedPublicIp = data.ip;
+      return cachedPublicIp;
+    }
+  } catch (e) {}
+  return process.env.VPS_PUBLIC_IP || '47.129.133.131';
+}
+
 function formatBytes(bytes, decimals = 2) {
   if (!bytes || isNaN(bytes)) return 'Unknown';
   const k = 1024;
@@ -347,7 +361,8 @@ app.get(['/download', '/download.php'], async (req, res) => {
   if (range) headers['Range'] = range;
 
   let upstream;
-  console.log(`[VPS Download Proxy] 🚀 Fetching TeraBox stream via VPS Static IP (47.129.133.131) -> Target: ${url.substring(0, 75)}...`);
+  const outboundIp = await getPublicIp();
+  console.log(`[VPS Download Proxy] 🚀 Fetching TeraBox stream via VPS Public IP (${outboundIp}) -> Target: ${url.substring(0, 75)}...`);
   try {
     // Perform manual redirect handling to prevent fetch from stripping cross-domain Cookie headers
     upstream = await fetch(url, { headers, redirect: 'manual' });
