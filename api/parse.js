@@ -1104,6 +1104,9 @@ export default async function handler(req, res) {
     // Always strip the leading '1' from the shortUrl because the /share/list API expects the raw surl token
     const strippedShortUrl = shortUrl.replace(/^1/, '');
 
+    const serverModeLog = process.env.VERCEL ? 'Vercel Proxy -> VPS Static IP' : 'VPS Static IP (47.129.133.131)';
+    console.log(`[VPS Server] 🌐 Processing TeraBox API call via ${serverModeLog} for surl: ${strippedShortUrl}`);
+
     // ─── CACHE CHECK (Execute first to protect trials & prevent load) ───
     try {
       await connectToDatabase();

@@ -347,6 +347,7 @@ app.get(['/download', '/download.php'], async (req, res) => {
   if (range) headers['Range'] = range;
 
   let upstream;
+  console.log(`[VPS Download Proxy] 🚀 Fetching TeraBox stream via VPS Static IP (47.129.133.131) -> Target: ${url.substring(0, 75)}...`);
   try {
     // Perform manual redirect handling to prevent fetch from stripping cross-domain Cookie headers
     upstream = await fetch(url, { headers, redirect: 'manual' });
