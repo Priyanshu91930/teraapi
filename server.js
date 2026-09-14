@@ -28,7 +28,6 @@ app.use(express.json());
 app.all('/parse', (req, res) => parseHandler(req, res));
 app.all('/api/parse', (req, res) => parseHandler(req, res));
 
-});
 
 app.get('/download', async (req, res) => {
   const { url, filename } = req.query;
