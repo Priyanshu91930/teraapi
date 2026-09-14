@@ -190,5 +190,63 @@ export default async function handler(req, res) {
         }
     }
 
+    // Route 4: Direct Google User Sync (App & Mobile Clients)
+    if (url.includes('/google-sync') || url.includes('/google-user')) {
+        if (req.method !== 'POST') {
+            return res.status(405).json({ error: 'Method Not Allowed' });
+        }
+        const { email, name, avatar, googleId } = req.body || {};
+        if (!email) {
+            return res.status(400).json({ error: 'Email parameter is required.' });
+        }
+        const cleanEmail = email.toLowerCase().trim();
+
+        try {
+            await connectToDatabase();
+            let user = await User.findOne({ email: cleanEmail });
+            if (!user) {
+                user = new User({
+                    email: cleanEmail,
+                    googleId: googleId || '',
+                    name: name || cleanEmail.split('@')[0],
+                    avatar: avatar || '',
+                    plan: 'free',
+                    premiumStatus: 'free',
+                    freePremiumUsesRemaining: 3
+                });
+                await user.save();
+                console.log(`[Auth Sync] Created new user: ${cleanEmail}`);
+            } else {
+                let updated = false;
+                if (name && !user.name) { user.name = name; updated = true; }
+                if (avatar && !user.avatar) { user.avatar = avatar; updated = true; }
+                if (googleId && !user.googleId) { user.googleId = googleId; updated = true; }
+                if (updated) await user.save();
+            }
+
+            const sessionToken = generateSessionToken(user.email, user.role);
+            const isPremiumUser = user.premiumStatus === 'premium' || (user.plan && user.plan !== 'free') || user.role === 'admin';
+            const isExpired = user.premiumExpiresAt && new Date(user.premiumExpiresAt) < new Date();
+            const activeStatus = (isPremiumUser && !isExpired) ? 'premium' : (isExpired ? 'expired' : 'free');
+
+            return res.status(200).json({
+                success: true,
+                token: sessionToken,
+                user: {
+                    email: user.email,
+                    name: user.name || user.email.split('@')[0],
+                    avatar: user.avatar || '',
+                    plan: user.plan || 'free',
+                    premiumStatus: activeStatus,
+                    premiumExpiresAt: user.premiumExpiresAt || null,
+                    freePremiumUsesRemaining: user.freePremiumUsesRemaining !== undefined ? user.freePremiumUsesRemaining : 3
+                }
+            });
+        } catch (err) {
+            console.error('[Auth Sync] Error syncing Google user:', err.message);
+            return res.status(500).json({ error: 'Internal Auth Sync Error: ' + err.message });
+        }
+    }
+
     return res.status(404).json({ error: 'Endpoint not found.' });
 }
