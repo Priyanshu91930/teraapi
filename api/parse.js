@@ -822,6 +822,35 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  // ── TRANSPARENT VERCEL-TO-VPS PROXY FORWARDER ──
+  // Keeps existing Android app users working without app updates while forcing static VPS IP for TeraBox requests
+  if (process.env.VERCEL && process.env.FORWARD_TO_VPS !== 'false') {
+    try {
+      const queryString = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+      const vpsEndpoint = process.env.VPS_API_URL || 'https://api.teraboxdownloader.co.in/parse';
+      const targetUrl = `${vpsEndpoint}${queryString}`;
+      
+      console.log(`[Vercel Forwarder] Forwarding Android/Web request to VPS static IP: ${targetUrl}`);
+      const vpsRes = await fetch(targetUrl, {
+        method: req.method,
+        headers: {
+          'x-api-key': req.headers['x-api-key'] || '',
+          'x-user-tier': req.headers['x-user-tier'] || '',
+          'x-client-type': req.headers['x-client-type'] || '',
+          'user-agent': req.headers['user-agent'] || 'Mozilla/5.0'
+        }
+      });
+      
+      if (vpsRes.ok) {
+        const data = await vpsRes.json();
+        return res.status(vpsRes.status).json(data);
+      }
+      console.warn(`[Vercel Forwarder] VPS returned status ${vpsRes.status}. Falling back to local Vercel handler...`);
+    } catch (proxyErr) {
+      console.error('[Vercel Forwarder] Proxy failed, falling back to local Vercel handler:', proxyErr.message);
+    }
+  }
+
   // Dynamic API Kill Switch: Check process.env.API_STATUS toggle configured in Vercel environment variables
   if (process.env.API_STATUS === 'off') {
     console.log('[API Status] Kill switch is active (off) via Vercel env. Serving 503 temporarily unavailable...');
