@@ -251,16 +251,11 @@ export async function getNdusToken(whost = 'https://www.1024terabox.com') {
     return now >= cooldownUntil;
   });
 
-  if (availableTokens.length === 0) {
-    console.warn(`[NDUS Pool] All ${tokens.length} configured NDUS tokens are currently on cooldown due to 400141 limits.`);
-    return '';
-  }
+  // Fallback to all configured tokens if all available tokens are marked on cooldown
+  const activeTokens = availableTokens.length > 0 ? availableTokens : tokens;
+  const selectedToken = activeTokens[0];
 
-  // STICKY ALLOCATION: Always use the first available non-cooldown token (Account 1).
-  // Only switch to Account 2 when Account 1 hits a 400141 challenge / cooldown.
-  const selectedToken = availableTokens[0];
-
-  console.log(`[NDUS Pool] Using active sticky token (1/${availableTokens.length} available, ${tokens.length} total in pool)`);
+  console.log(`[NDUS Pool] Using active NDUS token (${activeTokens.length} available, ${tokens.length} total in pool)`);
   return selectedToken;
 }
 
