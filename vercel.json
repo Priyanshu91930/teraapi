@@ -53,27 +53,20 @@
   ],
   "routes": [
     {
-      "src": "/auth/google",
+      "src": "/api/auth/(.*)",
       "dest": "/api/auth/index.js",
       "headers": {
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, OPTIONS"
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, x-api-key"
       }
     },
     {
-      "src": "/auth/google-callback",
+      "src": "/auth/(.*)",
       "dest": "/api/auth/index.js",
       "headers": {
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, OPTIONS"
-      }
-    },
-    {
-      "src": "/auth/me",
-      "dest": "/api/auth/index.js",
-      "headers": {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, Authorization, x-api-key"
       }
     },
