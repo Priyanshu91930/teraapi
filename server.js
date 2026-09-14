@@ -311,10 +311,18 @@ app.get('/parse', async (req, res) => {
 });
 
 app.get('/download', async (req, res) => {
-  const { url, filename, cookie } = req.query;
+  let { url, filename, cookie, b64 } = req.query;
 
   if (!url) {
     return res.status(400).json({ error: "url query parameter is required" });
+  }
+
+  if (b64 === '1') {
+    try {
+      url = Buffer.from(url, 'base64').toString('utf-8');
+    } catch (e) {
+      console.error('[Download Proxy] Failed to base64 decode URL:', e.message);
+    }
   }
 
   let parsed;

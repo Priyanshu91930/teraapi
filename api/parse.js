@@ -1584,13 +1584,13 @@ export default async function handler(req, res) {
           'Cookie': sessionCookie
         });
 
-        // Proxy direct TeraBox CDN link through Hostinger download proxy to inject session cookies
+        // Proxy direct TeraBox CDN link through VPS download proxy to inject session cookies and preserve AWS static IP
         // This prevents TeraBox "31362 sign error" when opened in external browsers/video players without cookies
-        if (dlink && !dlink.includes('teraboxdownloader.co.in')) {
+        if (dlink && !dlink.includes('api.teraboxdownloader.co.in')) {
           const b64Dl = Buffer.from(dlink).toString('base64');
           const safeName = file.server_filename || 'video.mp4';
           const sessionCookie = ndusToken ? buildCookie(ndusToken, browserId) : `browserid=${browserId}`;
-          dlink = `https://teraboxdownloader.co.in/download.php?url=${encodeURIComponent(b64Dl)}&b64=1&download=1&type=download&filename=${encodeURIComponent(safeName)}&cookie=${encodeURIComponent(sessionCookie)}`;
+          dlink = `https://api.teraboxdownloader.co.in/download?url=${encodeURIComponent(b64Dl)}&b64=1&download=1&type=download&filename=${encodeURIComponent(safeName)}&cookie=${encodeURIComponent(sessionCookie)}`;
         }
       }
 
@@ -1610,14 +1610,15 @@ export default async function handler(req, res) {
 
       // CAPTCHA verification required block removed to prevent loops in India
 
-      // Construct signed M3U8 streaming URL proxied via Hostinger download.php
+      // Construct signed M3U8 streaming URL proxied via VPS /download endpoint
       if (isVideo && sign && timestamp && listData.uk && file.fs_id) {
         try {
           const shareId = listData.share_id || listData.shareid || '';
           const rawStreamingUrl = `${anonApp.params.whost}/share/streaming?app_id=250528&web=1&channel=dubian-wap&clienttype=0&path=${encodeURIComponent(file.path || '')}&fid=${file.fs_id}&uk=${listData.uk}&shareid=${shareId}&sign=${sign}&timestamp=${timestamp}&type=M3U8_AUTO_720`;
           const b64Stream = Buffer.from(rawStreamingUrl).toString('base64');
-          streamUrl = `https://teraboxdownloader.co.in/download.php?url=${encodeURIComponent(b64Stream)}&b64=1&type=m3u8`;
-          debugStreamEndpoint = 'hostinger_m3u8_proxy';
+          const sessionCookie = ndusToken ? buildCookie(ndusToken, browserId) : `browserid=${browserId}`;
+          streamUrl = `https://api.teraboxdownloader.co.in/download?url=${encodeURIComponent(b64Stream)}&b64=1&type=m3u8&cookie=${encodeURIComponent(sessionCookie)}`;
+          debugStreamEndpoint = 'vps_m3u8_proxy';
           console.log(`[Parse] M3U8 stream URL constructed: ${streamUrl.substring(0, 100)}...`);
         } catch (streamErr) {
           console.error('[Parse] Stream URL construction failed:', streamErr.message);
