@@ -213,10 +213,10 @@ async function getAllNdusTokens(whost = 'https://www.1024terabox.com') {
     }
   }
 
-  // 3. Auto-bootstrap: Only trigger auto-login if NO manual token or DB token exists at all (tokens.length === 0)
+  // 3. Auto-bootstrap: Trigger auto-login if token pool has fewer tokens than configured credentials
   const credentials = getConfiguredCredentials();
-  if (credentials.length > 0 && tokens.length === 0 && whost) {
-    console.log(`[NDUS Pool] No active tokens in MongoDB or env. Running auto-login for configured account(s)...`);
+  if (credentials.length > 0 && tokens.length < credentials.length && whost) {
+    console.log(`[NDUS Pool] Have ${tokens.length} token(s) but ${credentials.length} account credential(s) configured. Running auto-login for missing account(s)...`);
     const freshToken = await refreshNdusToken(whost);
     if (freshToken) {
       try {
