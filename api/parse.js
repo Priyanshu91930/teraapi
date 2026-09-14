@@ -50,7 +50,7 @@ export async function getPublicIp() {
       return cachedPublicIp;
     }
   } catch (e) {}
-  return process.env.VPS_PUBLIC_IP || '47.129.133.131';
+  return process.env.VPS_PUBLIC_IP || 'Outbound VPS IP';
 }
 
 // ── MULTI-ACCOUNT POOL & COOLDOWN MANAGER ────────────────────────────────────
