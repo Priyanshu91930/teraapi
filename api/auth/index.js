@@ -17,7 +17,7 @@ export default async function handler(req, res) {
     const url = req.url || '';
     
     // Route 1: Google Auth Initiation
-    if (url.includes('/google') && !url.includes('/google-callback')) {
+    if (url.includes('/google') && !url.includes('/google-callback') && !url.includes('/google-sync') && !url.includes('/google-user')) {
         const client_id = process.env.GOOGLE_CLIENT_ID;
         if (!client_id) {
             console.error('[Google OAuth] GOOGLE_CLIENT_ID is missing.');
