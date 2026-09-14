@@ -310,7 +310,7 @@ app.get('/parse', async (req, res) => {
   }
 });
 
-app.get('/download', async (req, res) => {
+app.get(['/download', '/download.php'], async (req, res) => {
   let { url, filename, cookie, b64 } = req.query;
 
   if (!url) {

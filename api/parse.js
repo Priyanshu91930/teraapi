@@ -1590,18 +1590,18 @@ export default async function handler(req, res) {
           const b64Dl = Buffer.from(dlink).toString('base64');
           const safeName = file.server_filename || 'video.mp4';
           const sessionCookie = ndusToken ? buildCookie(ndusToken, browserId) : `browserid=${browserId}`;
-          dlink = `https://api.teraboxdownloader.co.in/download?url=${encodeURIComponent(b64Dl)}&b64=1&download=1&type=download&filename=${encodeURIComponent(safeName)}&cookie=${encodeURIComponent(sessionCookie)}`;
+          dlink = `https://api.teraboxdownloader.co.in/download.php?url=${encodeURIComponent(b64Dl)}&b64=1&download=1&type=download&filename=${encodeURIComponent(safeName)}&cookie=${encodeURIComponent(sessionCookie)}`;
         }
       }
 
-      // Failsafe Fallback: If direct dlink recovery failed (due to 400141 / 400310 rate limits), construct proxied download URL via VPS /download endpoint
+      // Failsafe Fallback: If direct dlink recovery failed (due to 400141 / 400310 rate limits), construct proxied download URL via VPS /download.php endpoint
       if (!dlink && sign && timestamp && (listData.share_id || listData.shareid) && listData.uk && file.fs_id) {
         try {
           const shareId = listData.share_id || listData.shareid || '';
           const rawDownloadUrl = `${anonApp.params.whost}/share/download?app_id=250528&web=1&channel=dubian-wap&clienttype=0&fid_list=%5B${file.fs_id}%5D&uk=${listData.uk}&shareid=${shareId}&sign=${sign}&timestamp=${timestamp}&type=dlink`;
           const safeName = file.server_filename || 'video.mp4';
           const sessionCookie = ndusToken ? buildCookie(ndusToken, browserId) : `browserid=${browserId}`;
-          dlink = `https://api.teraboxdownloader.co.in/download?url=${encodeURIComponent(rawDownloadUrl)}&filename=${encodeURIComponent(safeName)}&cookie=${encodeURIComponent(sessionCookie)}`;
+          dlink = `https://api.teraboxdownloader.co.in/download.php?url=${encodeURIComponent(rawDownloadUrl)}&filename=${encodeURIComponent(safeName)}&cookie=${encodeURIComponent(sessionCookie)}`;
           console.log(`[Parse] Failsafe proxy dlink constructed: ${dlink.substring(0, 80)}...`);
         } catch (fallbackErr) {
           console.error('[Parse] Failsafe proxy dlink construction failed:', fallbackErr.message);
@@ -1610,14 +1610,14 @@ export default async function handler(req, res) {
 
       // CAPTCHA verification required block removed to prevent loops in India
 
-      // Construct signed M3U8 streaming URL proxied via VPS /download endpoint
+      // Construct signed M3U8 streaming URL proxied via VPS /download.php endpoint
       if (isVideo && sign && timestamp && listData.uk && file.fs_id) {
         try {
           const shareId = listData.share_id || listData.shareid || '';
           const rawStreamingUrl = `${anonApp.params.whost}/share/streaming?app_id=250528&web=1&channel=dubian-wap&clienttype=0&path=${encodeURIComponent(file.path || '')}&fid=${file.fs_id}&uk=${listData.uk}&shareid=${shareId}&sign=${sign}&timestamp=${timestamp}&type=M3U8_AUTO_720`;
           const b64Stream = Buffer.from(rawStreamingUrl).toString('base64');
           const sessionCookie = ndusToken ? buildCookie(ndusToken, browserId) : `browserid=${browserId}`;
-          streamUrl = `https://api.teraboxdownloader.co.in/download?url=${encodeURIComponent(b64Stream)}&b64=1&type=m3u8&cookie=${encodeURIComponent(sessionCookie)}`;
+          streamUrl = `https://api.teraboxdownloader.co.in/download.php?url=${encodeURIComponent(b64Stream)}&b64=1&type=m3u8&cookie=${encodeURIComponent(sessionCookie)}`;
           debugStreamEndpoint = 'vps_m3u8_proxy';
           console.log(`[Parse] M3U8 stream URL constructed: ${streamUrl.substring(0, 100)}...`);
         } catch (streamErr) {
