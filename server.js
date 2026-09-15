@@ -23,6 +23,7 @@ try {
 import parseHandler from './api/parse.js';
 import authHandler from './api/auth/index.js';
 import webhookHandler from './api/webhook.js';
+import createOrderHandler from './api/payment/create-order.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -36,6 +37,8 @@ app.all('/api/auth/*', (req, res) => authHandler(req, res));
 app.all('/api/auth', (req, res) => authHandler(req, res));
 app.all('/auth/*', (req, res) => authHandler(req, res));
 app.all('/api/webhook', (req, res) => webhookHandler(req, res));
+app.all('/api/payment/create-order', (req, res) => createOrderHandler(req, res));
+app.all('/api/create-order', (req, res) => createOrderHandler(req, res));
 
 // API Key Verification Middleware for security (excludes /privacy)
 const verifyApiKey = (req, res, next) => {

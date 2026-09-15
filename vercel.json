@@ -49,6 +49,10 @@
     {
       "src": "api/dlink.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "api/payment/create-order.js",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
@@ -165,6 +169,24 @@
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type"
+      }
+    },
+    {
+      "src": "/api/payment/create-order",
+      "dest": "/api/payment/create-order.js",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, x-api-key"
+      }
+    },
+    {
+      "src": "/api/create-order",
+      "dest": "/api/payment/create-order.js",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, x-api-key"
       }
     }
   ]
