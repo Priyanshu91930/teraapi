@@ -1358,6 +1358,7 @@ export default async function handler(req, res) {
         console.log('[Free] Anonymous TeraBox response errno:', freeRes?.errno);
         // Accept even partial results (errno may be 0 with empty list for some mirrors)
         listData = freeRes;
+        usedAnonymousFallback = true;
       } catch (freeErr) {
         console.error('[Free] Anonymous TeraBox failed:', freeErr.message);
       }
@@ -1734,7 +1735,7 @@ export default async function handler(req, res) {
     }
     // ─────────────────────────────────────────────────────────────────────────
 
-    // Save payload to MongoDB Cache (only if it has valid downloadable content and no errors)
+    // Save payload to MongoDB Cache ONLY for true Premium NDUS responses (Skip caching for Anonymous Fallback responses)
     const hasValidCdn = formattedList.some(
       item => item.status === 'ok' && item.dlink && 
               item.error_code !== 'CONTENT_RESTRICTED' && 
@@ -1742,17 +1743,19 @@ export default async function handler(req, res) {
               item.error_code !== 'TERABOX_RATE_LIMITED' &&
               item.error_code !== 'SHARE_UNAVAILABLE'
     );
-    if (hasValidCdn) {
+    if (hasValidCdn && !usedAnonymousFallback) {
       try {
         await LinkCache.findOneAndUpdate(
           { shortUrl: strippedShortUrl },
           { response: payload, createdAt: new Date() },
           { upsert: true, returnDocument: 'after' }
         );
-        console.log(`[Cache Save] Successfully cached resolved response for surl: ${strippedShortUrl}`);
+        console.log(`[Cache Save] Successfully cached Premium NDUS response for surl: ${strippedShortUrl}`);
       } catch (cacheErr) {
         console.error('[Cache Save Error] Failed to write response to cache:', cacheErr.message);
       }
+    } else if (usedAnonymousFallback) {
+      console.log(`[Cache Skip] Anonymous fallback used for surl: ${strippedShortUrl}. Skipped MongoDB caching so future requests can get fresh Premium NDUS resolution once cooldown ends.`);
     }
 
     return res.status(200).json(payload);
