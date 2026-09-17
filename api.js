@@ -2652,10 +2652,18 @@ class TeraBoxApp {
             }
             
             const rdata = await req.body.json();
-            // rdata.errno: 4000020 - need verify
-            if(rdata.errno === 4000020){
-                await this.updateAppData();
-                return await this.shortUrlList(shortUrl, remoteDir, page);
+            // rdata.errno: 4000020 / 400141 / 400310 - need verify -> warm up HTML session page from VPS
+            if (rdata.errno === 4000020 || rdata.errno === 400141 || rdata.errno === 400310 || String(rdata.errmsg || '').toLowerCase().includes('verify')) {
+                if (!this._retriedVerify) {
+                    this._retriedVerify = true;
+                    console.log(`[TeraBoxApp] 400141 challenge (need verify) detected. Warming up HTML session page from VPS for surl: ${shortUrl}...`);
+                    try {
+                        await this.updateAppData(`/sharing/link?surl=${shortUrl}`);
+                    } catch (appErr) {
+                        console.log('[TeraBoxApp] Session warmup updateAppData failed:', appErr.message);
+                    }
+                    return await this.shortUrlList(shortUrl, remoteDir, page);
+                }
             }
             return rdata;
         }
