@@ -188,6 +188,15 @@ const LinkCacheSchema = new mongoose.Schema({
 
 export const LinkCache = mongoose.models.LinkCache || mongoose.model('LinkCache', LinkCacheSchema);
 
+// Define User History Schema (Cloud History Synced Across App & Web)
+const UserHistorySchema = new mongoose.Schema({
+  email: { type: String, required: true, index: true },
+  name: { type: String, required: true },
+  size: { type: String, default: 'Unknown' },
+  thumbnail: { type: String, default: '' },
+  url: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now }
+});
+UserHistorySchema.index({ email: 1, createdAt: -1 });
 
-
-
+export const UserHistory = mongoose.models.UserHistory || mongoose.model('UserHistory', UserHistorySchema);

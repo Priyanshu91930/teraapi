@@ -1280,6 +1280,12 @@ export default async function handler(req, res) {
             console.log('[Premium] Link is expired or deleted. Skipping token refresh.');
             listData = ndusData;
           } else if (ndusData && ndusData.errno === 400141) {
+            const vUrl = (ndusData.data && (ndusData.data.verify_url || ndusData.data.verifyUrl)) || `https://www.1024terabox.com/sharing/link?surl=${strippedShortUrl}`;
+            console.warn(`\n================================================================================`);
+            console.warn(`⚠️ TERABOX CAPTCHA / VERIFICATION CHALLENGE (errno 400141)`);
+            console.warn(`🔗 Verification Link to Solve in VPS Browser:`);
+            console.warn(`👉 ${vUrl}`);
+            console.warn(`================================================================================\n`);
             console.warn('[Premium] 400141 token challenge (need verify). Setting 2-hour cooldown (token preserved in DB)...');
             markTokenCooldown(ndusToken, 2 * 60 * 60 * 1000);
             // Do NOT delete token from MongoDB on temporary 400141 challenge
@@ -1380,7 +1386,21 @@ export default async function handler(req, res) {
           });
         }
 
-        // CAPTCHA verification required block removed to prevent loops in India
+        // ── TERABOX_VERIFICATION_REQUIRED: errno 400141 / need verify ──
+        if (errno === 400141 || errmsg.includes('need verify') || errmsg.includes('verify_v2')) {
+          const vUrl = (listData.data && (listData.data.verify_url || listData.data.verifyUrl)) || `https://www.1024terabox.com/sharing/link?surl=${strippedShortUrl}`;
+          console.warn(`\n================================================================================`);
+          console.warn(`⚠️ TERABOX VERIFICATION CHALLENGE REQUIRED (errno ${errno})`);
+          console.warn(`🔗 Verification Link (Open & Solve in VPS Browser to Clear Challenge):`);
+          console.warn(`👉 ${vUrl}`);
+          console.warn(`================================================================================\n`);
+          return res.status(503).json({
+            success: false,
+            code: 'TERABOX_VERIFICATION_REQUIRED',
+            message: 'TeraBox captcha verification is required for this IP/Account. Open the link to solve.',
+            verify_url: vUrl
+          });
+        }
 
         // ── TERABOX_RATE_LIMITED: code 102 / hit extra ──
         if (errno === 102 || errmsg.includes('hit extra') || errmsg.includes('spam')) {
