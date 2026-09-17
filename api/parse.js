@@ -38,6 +38,29 @@ function buildCookie(ndusToken, browserId) {
   return cookie;
 }
 
+export function extractNdusValue(str) {
+  if (!str) return '';
+  const match = String(str).match(/ndus=([^;]+)/i);
+  if (match) return match[1].trim();
+  return String(str).split(';')[0].trim();
+}
+
+export function deduplicateNdusTokens(tokenList) {
+  const seen = new Set();
+  const result = [];
+  for (const t of tokenList) {
+    if (!t || typeof t !== 'string') continue;
+    const trimmed = t.trim();
+    if (!trimmed) continue;
+    const coreVal = extractNdusValue(trimmed);
+    if (coreVal && !seen.has(coreVal)) {
+      seen.add(coreVal);
+      result.push(trimmed);
+    }
+  }
+  return result;
+}
+
 // Helper to dynamically resolve outbound server public IP
 let cachedPublicIp = null;
 export async function getPublicIp() {
@@ -252,7 +275,7 @@ async function getAllNdusTokens(whost = 'https://www.1024terabox.com') {
     }
   }
 
-  return tokens;
+  return deduplicateNdusTokens(tokens);
 }
 
 // Function to get the active ndus token from pool using IST Day-based Rotation with automatic failover
@@ -663,6 +686,7 @@ export async function refreshNdusToken(whost) {
               if (!mergedTokens.includes(t)) mergedTokens.push(t);
             });
           }
+          mergedTokens = deduplicateNdusTokens(mergedTokens);
           await SystemConfig.findOneAndUpdate(
             { key: 'TERABOX_NDUS' },
             { value: JSON.stringify(mergedTokens), updatedAt: new Date() },
