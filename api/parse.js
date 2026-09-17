@@ -275,7 +275,7 @@ export async function getNdusToken(whost = 'https://www.1024terabox.com') {
   const selectedIndex = (dayNum - 1) % activeTokens.length;
   const selectedToken = activeTokens[selectedIndex];
 
-  console.log(`[NDUS Pool] 📅 Day-based rotation: Day ${dayNum} IST → Account ${selectedIndex + 1} selected (${activeTokens.length} available, ${tokens.length} total)`);
+  console.log(`[NDUS Pool] 📅 Day-based rotation: Day ${dayNum} IST → Premium Token ${selectedIndex + 1} selected (${activeTokens.length} available in pool, ${tokens.length} total in DB/env)`);
   return selectedToken;
 }
 
