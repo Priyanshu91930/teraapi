@@ -1317,7 +1317,7 @@ export default async function handler(req, res) {
             // ── STEP 1: Warmup retry with SAME NDUS token (No account switching) ──
             console.log(`[Premium] 400141 challenge detected on Today's Account ${todayAccountDetails.selectedIndex + 1}. Running session warmup / link visit...`);
             try {
-              await app.updateAppData(`/sharing/link?surl=${strippedShortUrl}`);
+              await app.updateAppData(`sharing/link?surl=${strippedShortUrl}`);
             } catch (wErr) {
               console.warn('[Premium] Session warmup error:', wErr.message);
             }

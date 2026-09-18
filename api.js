@@ -495,7 +495,8 @@ class TeraBoxApp {
      * @throws {Error} Throws error if request fails or parsing fails
      */
     async updateAppData(customPath, retries = 4){
-        const url = new URL(this.params.whost + (customPath ? `/${customPath}` : '/main'));
+        const cleanPath = customPath ? (customPath.startsWith('/') ? customPath : `/${customPath}`) : '/main';
+        const url = new URL(this.params.whost + cleanPath);
         
         try{
             const req = await request(url, {
