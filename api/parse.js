@@ -3,7 +3,6 @@ import ytdl from '@distube/ytdl-core';
 import { youtube, igdl, ttdl, fbdown } from 'btch-downloader';
 import { recordPageView, connectToDatabase, ApiSubscription, SystemConfig, LinkCache, User } from '../db.js';
 import { verifySessionToken } from './auth/me.js';
-import { ProxyAgent } from 'undici';
 import crypto from 'node:crypto';
 
 let _browserSolverMod = null;
