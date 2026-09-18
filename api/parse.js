@@ -896,7 +896,7 @@ export default async function handler(req, res) {
       const targetUrl = `${vpsEndpoint}${queryString}`;
       
       console.log(`[Vercel Forwarder] Forwarding Android/Web request to VPS static IP: ${targetUrl}`);
-      const vpsRes = await fetch(targetUrl, {
+      let vpsRes = await fetch(targetUrl, {
         method: req.method,
         headers: {
           'x-api-key': req.headers['x-api-key'] || '',
@@ -906,6 +906,21 @@ export default async function handler(req, res) {
         }
       });
       
+      // Retry once if VPS returned 502 Bad Gateway due to momentary reload/restart
+      if (vpsRes.status === 502 || vpsRes.status === 503 || vpsRes.status === 504) {
+        console.warn(`[Vercel Forwarder] VPS returned status ${vpsRes.status}. Retrying VPS in 600ms...`);
+        await new Promise(r => setTimeout(r, 600));
+        vpsRes = await fetch(targetUrl, {
+          method: req.method,
+          headers: {
+            'x-api-key': req.headers['x-api-key'] || '',
+            'x-user-tier': req.headers['x-user-tier'] || '',
+            'x-client-type': req.headers['x-client-type'] || '',
+            'user-agent': req.headers['user-agent'] || 'Mozilla/5.0'
+          }
+        }).catch(() => vpsRes);
+      }
+
       if (vpsRes.status !== 502 && vpsRes.status !== 503 && vpsRes.status !== 504) {
         try {
           const data = await vpsRes.json();
