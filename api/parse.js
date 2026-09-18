@@ -1194,7 +1194,7 @@ export default async function handler(req, res) {
     }
 
     if (!shortUrl) {
-      return res.status(400).json({ error: "Invalid share link. Please paste a valid TeraBox, YouTube, Instagram, Facebook, or TikTok link." });
+      return res.status(400).json({ error: "Invalid share link. Please paste a valid TeraBox link." });
     }
 
     // Always strip the leading '1' from the shortUrl because the /share/list API expects the raw surl token
