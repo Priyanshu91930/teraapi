@@ -297,27 +297,23 @@ async function getAllNdusTokens(whost = 'https://www.1024terabox.com') {
 }
 
 // Function to get the active ndus token from pool using IST Day-based Rotation with automatic failover
-export async function getNdusToken(whost = 'https://www.1024terabox.com') {
+export async function getNdusTokenDetails(whost = 'https://www.1024terabox.com') {
   const tokens = await getAllNdusTokens(whost);
-  if (tokens.length === 0) return '';
+  if (tokens.length === 0) return { token: '', selectedIndex: 0, totalTokens: 0 };
 
-  const now = Date.now();
-  const availableTokens = tokens.filter(t => {
-    const cooldownUntil = ndusCooldowns.get(t) || 0;
-    return now >= cooldownUntil;
-  });
-
-  // Fallback to all configured tokens if all available tokens are marked on cooldown
-  const activeTokens = availableTokens.length > 0 ? availableTokens : tokens;
-  
   // IST Day-based rotation (Day 1 -> Account 1, Day 2 -> Account 2, etc.)
   const istDateStr = new Date().toLocaleDateString("en-US", { timeZone: "Asia/Kolkata" });
   const dayNum = new Date(istDateStr).getDate() || 1;
-  const selectedIndex = (dayNum - 1) % activeTokens.length;
-  const selectedToken = activeTokens[selectedIndex];
+  const selectedIndex = (dayNum - 1) % tokens.length;
+  const selectedToken = tokens[selectedIndex];
 
-  console.log(`[NDUS Pool] 📅 Day-based rotation: Day ${dayNum} IST → Premium Token ${selectedIndex + 1} selected (${activeTokens.length} available in pool, ${tokens.length} total in DB/env)`);
-  return selectedToken;
+  console.log(`[NDUS Pool] 📅 Strict Day Rotation: Day ${dayNum} IST → Premium Account ${selectedIndex + 1} selected (Token ${selectedIndex + 1}/${tokens.length})`);
+  return { token: selectedToken, selectedIndex, totalTokens: tokens.length };
+}
+
+export async function getNdusToken(whost = 'https://www.1024terabox.com') {
+  const details = await getNdusTokenDetails(whost);
+  return details.token;
 }
 
 // Put token on cooldown (default: 2 hours) when 400141 occurs
@@ -619,7 +615,7 @@ let _ndusRefreshInFlight = null; // Single-flight promise lock: prevents concurr
 
 // Function to refresh ndus token using credentials.
 // Single-flight: if a refresh is already in progress, all callers await the same promise.
-export async function refreshNdusToken(whost) {
+export async function refreshNdusToken(whost, targetAccountIndex = undefined) {
   // ── Single-flight lock: if a refresh is already running, wait for it ──
   if (_ndusRefreshInFlight) {
     console.log('[NDUS Auto-Login] Refresh already in-flight. Waiting for existing promise...');
@@ -637,40 +633,32 @@ export async function refreshNdusToken(whost) {
   _ndusRefreshInFlight = (async () => {
     try {
       // Collect all configured TeraBox email/password credential pairs
-      const credentialPairs = [];
-      
-      const defaultEmail = process.env.TERABOX_EMAIL || process.env.TERABOX_USER;
-      const defaultPass = process.env.TERABOX_PASSWORD || process.env.TERABOX_PASS;
-      if (defaultEmail && defaultPass) {
-        credentialPairs.push({ email: defaultEmail, password: defaultPass });
-      }
-
-      // Check numbered credentials (TERABOX_USER_1/TERABOX_PASSWORD_1, TERABOX_USER_2/TERABOX_PASSWORD_2, etc.)
-      for (let i = 1; i <= 10; i++) {
-        const email = process.env[`TERABOX_USER_${i}`] || process.env[`TERABOX_EMAIL_${i}`];
-        const pass = process.env[`TERABOX_PASSWORD_${i}`] || process.env[`TERABOX_PASS_${i}`];
-        if (email && pass) {
-          if (!credentialPairs.some(p => p.email === email)) {
-            credentialPairs.push({ email, password: pass });
-          }
-        }
-      }
-
+      const credentialPairs = getConfiguredCredentials();
       if (credentialPairs.length === 0) {
         console.log('[NDUS Auto-Login] Missing credentials (TERABOX_EMAIL / TERABOX_PASSWORD) in env variables.');
         return null;
       }
 
-      const generatedTokens = [];
+      let pairsToLogin = credentialPairs;
+      if (targetAccountIndex !== undefined && targetAccountIndex >= 0 && targetAccountIndex < credentialPairs.length) {
+        pairsToLogin = [{ pair: credentialPairs[targetAccountIndex], index: targetAccountIndex }];
+      } else {
+        pairsToLogin = credentialPairs.map((pair, index) => ({ pair, index }));
+      }
 
-      for (const pair of credentialPairs) {
-        console.log(`[NDUS Auto-Login] Attempting passport login for email: ${pair.email}`);
+      let currentDbTokens = await getAllNdusTokens(whost);
+      let newGeneratedToken = null;
+
+      for (const item of pairsToLogin) {
+        const pair = item.pair;
+        const actualIdx = item.index;
+        console.log(`[NDUS Auto-Login] Attempting passport login for Account ${actualIdx + 1} (${pair.email})...`);
         const app = new TeraBoxApp('');
         app.params.ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
         const tbDomains = ['1024tera','1024terabox','terasharefile','terashare','terasharelink','nephobox','teraboxapp','tibbox','tibibox','freeterabox','teraboxlink','mirrobox','4funbox','terabox.fun','momerybox','terabox.app','terabox.ap','dubox','terabox.best','teraboxshare','terafileshare','1024box'];
-        app.TERABOX_DOMAIN = tbDomains.some(d => whost.includes(d)) ? '1024terabox.com' : 'terabox.com';
-        app.params.whost = whost;
-        app.params.uhost = whost;
+        app.TERABOX_DOMAIN = tbDomains.some(d => whost && whost.includes(d)) ? '1024terabox.com' : 'terabox.com';
+        app.params.whost = whost || 'https://www.1024terabox.com';
+        app.params.uhost = app.params.whost;
 
         try {
           const preLoginData = await app.passportPreLogin(pair.email);
@@ -678,20 +666,24 @@ export async function refreshNdusToken(whost) {
 
           if (loginRes.code === 0 && loginRes.data && loginRes.data.ndus) {
             const fullCookies = loginRes.data.cookies || `ndus=${loginRes.data.ndus}`;
-            console.log(`[NDUS Auto-Login] Success for ${pair.email}! New token generated.`);
-            generatedTokens.push(fullCookies);
+            console.log(`[NDUS Auto-Login] Success for Account ${actualIdx + 1} (${pair.email})! New fresh token generated.`);
+            newGeneratedToken = fullCookies;
+            if (actualIdx < currentDbTokens.length) {
+              currentDbTokens[actualIdx] = fullCookies;
+            } else {
+              currentDbTokens.push(fullCookies);
+            }
           } else {
-            console.error(`[NDUS Auto-Login] Failed for ${pair.email}. Response:`, JSON.stringify(loginRes));
+            console.error(`[NDUS Auto-Login] Failed for Account ${actualIdx + 1} (${pair.email}). Response:`, JSON.stringify(loginRes));
           }
         } catch (accountErr) {
-          console.error(`[NDUS Auto-Login] Exception for ${pair.email}:`, accountErr.message);
+          console.error(`[NDUS Auto-Login] Exception for Account ${actualIdx + 1} (${pair.email}):`, accountErr.message);
         }
       }
 
-      if (generatedTokens.length > 0) {
-        // Save fresh generated tokens to MongoDB persistently (replace old expired tokens)
+      if (currentDbTokens.length > 0) {
         try {
-          const mergedTokens = deduplicateNdusTokens([...generatedTokens]);
+          const mergedTokens = deduplicateNdusTokens(currentDbTokens);
           await SystemConfig.findOneAndUpdate(
             { key: 'TERABOX_NDUS' },
             { value: JSON.stringify(mergedTokens), updatedAt: new Date() },
@@ -702,11 +694,11 @@ export async function refreshNdusToken(whost) {
             { value: JSON.stringify(mergedTokens), updatedAt: new Date() },
             { upsert: true }
           );
-          console.log(`[NDUS Auto-Login] Replaced old DB tokens with ${mergedTokens.length} fresh cookie token(s).`);
+          console.log(`[NDUS Auto-Login] Updated MongoDB configuration cache with ${mergedTokens.length} active cookie token(s).`);
         } catch (dbErr) {
           console.error('[NDUS Auto-Login] Failed to save to MongoDB:', dbErr.message);
         }
-        return generatedTokens[0];
+        return newGeneratedToken || currentDbTokens[targetAccountIndex || 0];
       }
 
       return null;
@@ -714,7 +706,6 @@ export async function refreshNdusToken(whost) {
       console.error('[NDUS Auto-Login] Exception occurred:', loginErr.message);
       return null;
     } finally {
-      // Always release the single-flight lock so future requests can retry
       _ndusRefreshInFlight = null;
     }
   })();
@@ -1266,7 +1257,8 @@ export default async function handler(req, res) {
       // ── PREMIUM ROUTE ──
       console.log(`[ROUTER] user=${entitlement.userId || 'api'} feature=parse entitlement=paid`);
       console.log('[ROUTER] Using premium route (NDUS session)...');
-      let ndusToken = await getNdusToken();
+      const todayAccountDetails = await getNdusTokenDetails(anonApp.params.whost);
+      let ndusToken = todayAccountDetails.token;
       activeWorkingNdusToken = ndusToken;
       browserId = getBrowserIdForToken(ndusToken);
       let autoLoginAttempted = false;
@@ -1274,7 +1266,7 @@ export default async function handler(req, res) {
       // Bootstrap: no token anywhere? Try auto-login for self-start.
       if (!ndusToken) {
         console.log('[Premium] No ndus token found. Trying credential bootstrap...');
-        ndusToken = await refreshNdusToken(anonApp.params.whost) || '';
+        ndusToken = await refreshNdusToken(anonApp.params.whost, todayAccountDetails.selectedIndex) || '';
         activeWorkingNdusToken = ndusToken;
         browserId = getBrowserIdForToken(ndusToken);
         autoLoginAttempted = true;
@@ -1315,30 +1307,39 @@ export default async function handler(req, res) {
             console.warn(`🔗 Verification Link to Solve in VPS Browser:`);
             console.warn(`👉 ${vUrl}`);
             console.warn(`================================================================================\n`);
-            console.warn('[Premium] 400141 token challenge (need verify). Setting 2-hour cooldown (token preserved in DB)...');
             markTokenCooldown(ndusToken, 2 * 60 * 60 * 1000);
-            // Do NOT delete token from MongoDB on temporary 400141 challenge
 
-            // Try failover to next active account in pool
-            let nextPoolToken = await getNdusToken();
-            if (!nextPoolToken || nextPoolToken === ndusToken) {
-              console.log('[Premium] No ready token in pool cache. Attempting auto-login for alternate accounts...');
-              nextPoolToken = await refreshNdusToken(anonApp.params.whost) || '';
+            // ── STEP 1: Warmup retry with SAME NDUS token (No account switching) ──
+            console.log(`[Premium] 400141 challenge detected on Today's Account ${todayAccountDetails.selectedIndex + 1}. Running session warmup / link visit...`);
+            try {
+              await app.updateAppData(`/sharing/link?surl=${strippedShortUrl}`);
+            } catch (wErr) {
+              console.warn('[Premium] Session warmup error:', wErr.message);
             }
+            await new Promise(r => setTimeout(r, 1200));
 
-            if (nextPoolToken && nextPoolToken !== ndusToken) {
-              console.log('[Premium] Switching to alternate account after 400141 challenge...');
-              ndusToken = nextPoolToken;
-              activeWorkingNdusToken = nextPoolToken;
-              browserId = getBrowserIdForToken(ndusToken);
-              app = new TeraBoxApp(buildCookie(ndusToken, browserId));
-              app.params.ua = anonApp.params.ua;
-              app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
-              app.params.whost = anonApp.params.whost;
-              app.params.uhost = anonApp.params.uhost;
-              premiumApp = app;
-              ndusData = await app.shortUrlList(strippedShortUrl);
-              console.log('[Premium] Failover account NDUS response:', JSON.stringify(ndusData));
+            console.log(`[Premium] Retrying shortUrlList with Today's Account ${todayAccountDetails.selectedIndex + 1} after session warmup...`);
+            ndusData = await app.shortUrlList(strippedShortUrl);
+            console.log('[Premium] Warmup retry response:', JSON.stringify(ndusData));
+
+            // ── STEP 2: If STILL 400141, auto-login ONLY for TODAY'S Account ──
+            if (ndusData && ndusData.errno === 400141) {
+              console.warn(`[Premium] Warmup retry still returned 400141 for Account ${todayAccountDetails.selectedIndex + 1}. Generating fresh NDUS token for Today's Account ONLY...`);
+              const freshTokenForToday = await refreshNdusToken(anonApp.params.whost, todayAccountDetails.selectedIndex);
+              if (freshTokenForToday) {
+                console.log(`[Premium] Successfully refreshed NDUS token for Today's Account ${todayAccountDetails.selectedIndex + 1}. Retrying request...`);
+                ndusToken = freshTokenForToday;
+                activeWorkingNdusToken = freshTokenForToday;
+                browserId = getBrowserIdForToken(ndusToken);
+                app = new TeraBoxApp(buildCookie(ndusToken, browserId));
+                app.params.ua = anonApp.params.ua;
+                app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
+                app.params.whost = anonApp.params.whost;
+                app.params.uhost = anonApp.params.uhost;
+                premiumApp = app;
+                ndusData = await app.shortUrlList(strippedShortUrl);
+                console.log('[Premium] Fresh Token retry response:', JSON.stringify(ndusData));
+              }
             }
           }
 
