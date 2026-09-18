@@ -5,7 +5,23 @@ import { recordPageView, connectToDatabase, ApiSubscription, SystemConfig, LinkC
 import { verifySessionToken } from './auth/me.js';
 import { ProxyAgent } from 'undici';
 import crypto from 'node:crypto';
-import { solveChallengeWithBrowser } from '../browser_solver.js';
+
+let _browserSolverMod = null;
+async function safeSolveChallengeWithBrowser(verifyUrl, ndusToken) {
+  try {
+    if (!_browserSolverMod) {
+      _browserSolverMod = await import('./browser_solver.js').catch(async () => {
+        return await import('../browser_solver.js').catch(() => null);
+      });
+    }
+    if (_browserSolverMod && _browserSolverMod.solveChallengeWithBrowser) {
+      return await _browserSolverMod.solveChallengeWithBrowser(verifyUrl, ndusToken);
+    }
+  } catch (err) {
+    console.warn('[VPS Browser Solver] Dynamic import skipped:', err.message);
+  }
+  return { success: false, error: 'Browser solver module unavailable' };
+}
 
 // Deterministic browserId fingerprint generator bound to account token
 function getBrowserIdForToken(token) {
@@ -1331,7 +1347,7 @@ export default async function handler(req, res) {
             // ── STEP 1: VPS Real Headless Browser Solve ──
             console.log(`[Premium] 400141 challenge detected on Today's Account ${todayAccountDetails.selectedIndex + 1}. Launching Real VPS Chromium Browser...`);
             try {
-              const browserResult = await solveChallengeWithBrowser(vUrl, ndusToken);
+              const browserResult = await safeSolveChallengeWithBrowser(vUrl, ndusToken);
               if (browserResult && browserResult.success) {
                 console.log(`[Premium] VPS Real Browser visit complete! Retrying shortUrlList...`);
               }
