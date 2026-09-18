@@ -312,7 +312,7 @@ async function getAllNdusTokens(whost = 'https://www.1024terabox.com') {
   return deduped;
 }
 
-// Function to get the active ndus token from pool using IST Day-based Rotation with automatic failover
+// Function to get Today's primary ndus token from pool using IST Day-based Rotation
 export async function getNdusTokenDetails(whost = 'https://www.1024terabox.com') {
   const tokens = await getAllNdusTokens(whost);
   if (tokens.length === 0) return { token: '', selectedIndex: 0, totalTokens: 0 };
@@ -320,34 +320,23 @@ export async function getNdusTokenDetails(whost = 'https://www.1024terabox.com')
   // IST Day-based rotation (Day 1 -> Account 1, Day 2 -> Account 2, etc.)
   const istDateStr = new Date().toLocaleDateString("en-US", { timeZone: "Asia/Kolkata" });
   const dayNum = new Date(istDateStr).getDate() || 1;
-  const preferredIndex = (dayNum - 1) % tokens.length;
-  
-  const now = Date.now();
-  const prefToken = tokens[preferredIndex];
-  const prefCooldown = ndusCooldowns.get(prefToken) || 0;
+  const selectedIndex = (dayNum - 1) % tokens.length;
+  const selectedToken = tokens[selectedIndex];
 
-  // Check if primary today token is available (not on cooldown)
-  if (now >= prefCooldown) {
-    console.log(`[NDUS Pool] 📅 Day ${dayNum} IST → Premium Account ${preferredIndex + 1} selected (Token ${preferredIndex + 1}/${tokens.length})`);
-    return { token: prefToken, selectedIndex: preferredIndex, totalTokens: tokens.length };
-  }
+  console.log(`[NDUS Pool] 📅 Day ${dayNum} IST → Primary Account ${selectedIndex + 1} selected (Token ${selectedIndex + 1}/${tokens.length})`);
+  return { token: selectedToken, selectedIndex, totalTokens: tokens.length };
+}
 
-  // Primary account is on 20-min cooldown due to 400141! Switch to backup account
-  const remainingMin = Math.ceil((prefCooldown - now) / 60000);
-  console.warn(`[NDUS Pool] ⚠️ Account ${preferredIndex + 1} is on 20-min cooldown for another ${remainingMin} min. Switching to backup account...`);
+// Function to get Alternate account token for per-link 400141 failover
+export async function getAlternateNdusTokenDetails(whost = 'https://www.1024terabox.com', currentIndex = 0) {
+  const tokens = await getAllNdusTokens(whost);
+  if (tokens.length <= 1) return { token: '', selectedIndex: currentIndex, totalTokens: tokens.length };
 
-  for (let i = 0; i < tokens.length; i++) {
-    if (i === preferredIndex) continue;
-    const altToken = tokens[i];
-    const altCooldown = ndusCooldowns.get(altToken) || 0;
-    if (now >= altCooldown) {
-      console.log(`[NDUS Pool] 🔄 Temporarily switched to Account ${i + 1} (Token ${i + 1}/${tokens.length}) while Account ${preferredIndex + 1} is on 20-min cooldown.`);
-      return { token: altToken, selectedIndex: i, totalTokens: tokens.length, isBackup: true };
-    }
-  }
+  const altIndex = (currentIndex + 1) % tokens.length;
+  const altToken = tokens[altIndex];
 
-  console.warn(`[NDUS Pool] All accounts are currently on cooldown. Reusing Account ${preferredIndex + 1}.`);
-  return { token: prefToken, selectedIndex: preferredIndex, totalTokens: tokens.length };
+  console.log(`[NDUS Pool] 🔄 Per-Link Failover: Swapping from Account ${currentIndex + 1} to Alternate Account ${altIndex + 1} (Token ${altIndex + 1}/${tokens.length})`);
+  return { token: altToken, selectedIndex: altIndex, totalTokens: tokens.length };
 }
 
 export async function getNdusToken(whost = 'https://www.1024terabox.com') {
@@ -1403,14 +1392,14 @@ export default async function handler(req, res) {
             ndusData = await app.shortUrlList(strippedShortUrl);
             console.log('[Premium] Post-Browser retry response:', JSON.stringify(ndusData));
 
-            // ── STEP 2: If STILL 400141, auto-login DISABLED -> Switch to Backup Account for 20 mins ──
+            // ── STEP 2: If STILL 400141, auto-login DISABLED -> Try Alternate Account ONLY for THIS link ──
             if (ndusData && ndusData.errno === 400141) {
-              console.warn(`[Premium] Account ${todayAccountDetails.selectedIndex + 1} returned 400141. Auto-login disabled. Swapping to alternate account for 20 min...`);
-              const backupDetails = await getNdusTokenDetails(anonApp.params.whost);
-              if (backupDetails.token && backupDetails.token !== ndusToken) {
-                console.log(`[NDUS Pool] Swapping to Account ${backupDetails.selectedIndex + 1} (${backupDetails.isBackup ? 'Backup' : 'Primary'}). Retrying request...`);
-                ndusToken = backupDetails.token;
-                activeWorkingNdusToken = backupDetails.token;
+              console.warn(`[Premium] Account ${todayAccountDetails.selectedIndex + 1} returned 400141 for link ${strippedShortUrl}. Auto-login disabled. Trying alternate account for this link...`);
+              const altDetails = await getAlternateNdusTokenDetails(anonApp.params.whost, todayAccountDetails.selectedIndex);
+              if (altDetails.token && altDetails.token !== ndusToken) {
+                console.log(`[NDUS Pool] Retrying link ${strippedShortUrl} using Alternate Account ${altDetails.selectedIndex + 1}...`);
+                ndusToken = altDetails.token;
+                activeWorkingNdusToken = altDetails.token;
                 browserId = getBrowserIdForToken(ndusToken);
                 app = new TeraBoxApp(buildCookie(ndusToken, browserId));
                 app.params.ua = anonApp.params.ua;
