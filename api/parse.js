@@ -5,6 +5,7 @@ import { recordPageView, connectToDatabase, ApiSubscription, SystemConfig, LinkC
 import { verifySessionToken } from './auth/me.js';
 import { ProxyAgent } from 'undici';
 import crypto from 'node:crypto';
+import { solveChallengeWithBrowser } from '../browser_solver.js';
 
 // Deterministic browserId fingerprint generator bound to account token
 function getBrowserIdForToken(token) {
@@ -1327,8 +1328,17 @@ export default async function handler(req, res) {
             console.warn(`================================================================================\n`);
             markTokenCooldown(ndusToken, 2 * 60 * 60 * 1000);
 
-            // ── STEP 1: Warmup retry with SAME NDUS token (No account switching) ──
-            console.log(`[Premium] 400141 challenge detected on Today's Account ${todayAccountDetails.selectedIndex + 1}. Running session warmup / link visit...`);
+            // ── STEP 1: VPS Real Headless Browser Solve ──
+            console.log(`[Premium] 400141 challenge detected on Today's Account ${todayAccountDetails.selectedIndex + 1}. Launching Real VPS Chromium Browser...`);
+            try {
+              const browserResult = await solveChallengeWithBrowser(vUrl, ndusToken);
+              if (browserResult && browserResult.success) {
+                console.log(`[Premium] VPS Real Browser visit complete! Retrying shortUrlList...`);
+              }
+            } catch (bErr) {
+              console.warn('[Premium] VPS Browser solve exception:', bErr.message);
+            }
+
             try {
               await app.updateAppData(`sharing/link?surl=${strippedShortUrl}`);
             } catch (wErr) {
@@ -1336,9 +1346,9 @@ export default async function handler(req, res) {
             }
             await new Promise(r => setTimeout(r, 1200));
 
-            console.log(`[Premium] Retrying shortUrlList with Today's Account ${todayAccountDetails.selectedIndex + 1} after session warmup...`);
+            console.log(`[Premium] Retrying shortUrlList with Today's Account ${todayAccountDetails.selectedIndex + 1} after Real Browser warmup...`);
             ndusData = await app.shortUrlList(strippedShortUrl);
-            console.log('[Premium] Warmup retry response:', JSON.stringify(ndusData));
+            console.log('[Premium] Post-Browser retry response:', JSON.stringify(ndusData));
 
             // ── STEP 2: If STILL 400141, auto-login ONLY for TODAY'S Account ──
             if (ndusData && ndusData.errno === 400141) {
