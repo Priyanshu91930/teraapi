@@ -1073,19 +1073,19 @@ export default async function handler(req, res) {
       }
 
       if (!yt || !yt.mp4) {
-        throw new Error('YouTube resolution failed. Please verify the URL and try again.');
+        throw new Error('Video resolution failed. Please verify the URL and try again.');
       }
 
       return res.status(200).json({
         list: [
           {
-            name: `${yt.title || 'YouTube_Video'} (Video - MP4)`,
+            name: `${yt.title || 'Media_Video'} (Video - MP4)`,
             size: yt.mp4Size ? formatBytes(Number(yt.mp4Size)) : 'Unknown',
             thumbnail: yt.thumbnail || '',
             dlink: yt.mp4 || '',
           },
           {
-            name: `${yt.title || 'YouTube_Video'} (Audio - MP3)`,
+            name: `${yt.title || 'Media_Audio'} (Audio - MP3)`,
             size: yt.mp3Size ? formatBytes(Number(yt.mp3Size)) : 'Unknown',
             thumbnail: yt.thumbnail || '',
             dlink: yt.mp3 || '',
@@ -1094,9 +1094,9 @@ export default async function handler(req, res) {
       });
     }
 
-    // 2. Instagram Downloader
+    // 2. Secondary Media Downloader
     if (lowerUrl.includes('instagram.com')) {
-      console.log(`Resolving Instagram URL: ${cleanUrl}...`);
+      console.log(`Resolving Media URL: ${cleanUrl}...`);
       let data;
       try {
         const apiRes = await fetch(`https://backend1.tioo.eu.org/igdl?url=${encodeURIComponent(cleanUrl)}`);
@@ -1110,14 +1110,14 @@ export default async function handler(req, res) {
       const list = Array.isArray(data) ? data : (data.result || []);
       const first = list[0];
       if (!first) {
-        throw new Error('No media files found in this Instagram post');
+        throw new Error('No media files found in this post');
       }
 
       let caption = (data && data.caption) || (first && first.caption) || '';
       if (caption.length > 60) {
         caption = caption.substring(0, 60).trim() + '...';
       }
-      const igTitle = caption ? `${caption} (Instagram).mp4` : `Instagram_Video_${Date.now().toString().slice(-4)}.mp4`;
+      const igTitle = caption ? `${caption}.mp4` : `Media_Video_${Date.now().toString().slice(-4)}.mp4`;
       const igThumbnail = first.thumbnail || first.thumbnail_url || first.preview || '';
 
       return res.status(200).json({
@@ -1130,19 +1130,19 @@ export default async function handler(req, res) {
       });
     }
 
-    // 3. TikTok Downloader
+    // 3. Short Video Downloader
     if (lowerUrl.includes('tiktok.com')) {
       const tt = await ttdl(cleanUrl);
       if (!tt.status) {
-        throw new Error(tt.message || 'TikTok resolution failed');
+        throw new Error(tt.message || 'Video resolution failed');
       }
       const videoUrl = Array.isArray(tt.video) ? tt.video[0] : tt.video;
       if (!videoUrl) {
-        throw new Error('No video found in this TikTok');
+        throw new Error('No video found in this link');
       }
       return res.status(200).json({
         list: [{
-          name: tt.title || 'TikTok_Video.mp4',
+          name: tt.title || 'Media_Video.mp4',
           size: 'Unknown',
           thumbnail: tt.thumbnail || '',
           dlink: videoUrl,
@@ -1150,9 +1150,9 @@ export default async function handler(req, res) {
       });
     }
 
-    // 4. Facebook Downloader
+    // 4. Social Media Downloader
     if (lowerUrl.includes('facebook.com') || lowerUrl.includes('fb.watch') || lowerUrl.includes('fb.gg')) {
-      console.log(`Resolving Facebook URL: ${cleanUrl}...`);
+      console.log(`Resolving Media URL: ${cleanUrl}...`);
       let data;
       try {
         const apiRes = await fetch(`https://backend1.tioo.eu.org/fbdown?url=${encodeURIComponent(cleanUrl)}`);
@@ -1163,10 +1163,10 @@ export default async function handler(req, res) {
 
       const videoUrl = data.HD || data.Normal_video || data.url;
       if (!videoUrl) {
-        throw new Error('No video found in this Facebook post');
+        throw new Error('No video found in this post');
       }
 
-      let title = data.title || data.caption || 'Facebook_Video';
+      let title = data.title || data.caption || 'Media_Video';
       if (title.length > 60) {
         title = title.substring(0, 60).trim() + '...';
       }
