@@ -876,11 +876,16 @@ export default async function handler(req, res) {
         }
       });
       
-      if (vpsRes.ok) {
-        const data = await vpsRes.json();
-        return res.status(vpsRes.status).json(data);
+      if (vpsRes.status !== 502 && vpsRes.status !== 503 && vpsRes.status !== 504) {
+        try {
+          const data = await vpsRes.json();
+          return res.status(vpsRes.status).json(data);
+        } catch (e) {
+          const text = await vpsRes.text();
+          return res.status(vpsRes.status).send(text);
+        }
       }
-      console.warn(`[Vercel Forwarder] VPS returned status ${vpsRes.status}. Falling back to local Vercel handler...`);
+      console.warn(`[Vercel Forwarder] VPS returned server error status ${vpsRes.status}. Falling back to local Vercel handler...`);
     } catch (proxyErr) {
       console.error('[Vercel Forwarder] Proxy failed, falling back to local Vercel handler:', proxyErr.message);
     }
