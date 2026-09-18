@@ -612,10 +612,20 @@ export async function consumeFreeTrial(email) {
 
 let autoLoginCooldownUntil = 0; // In-memory rate limit cooldown lock
 let _ndusRefreshInFlight = null; // Single-flight promise lock: prevents concurrent login storms
+const accountAutoLoginCooldowns = new Map(); // Account-level login cooldown lock: prevents infinite login loops
 
 // Function to refresh ndus token using credentials.
 // Single-flight: if a refresh is already in progress, all callers await the same promise.
 export async function refreshNdusToken(whost, targetAccountIndex = undefined) {
+  // ── Per-Account Cooldown check: prevent infinite auto-login loops ──
+  const accountKey = targetAccountIndex !== undefined ? targetAccountIndex : 'all';
+  const accountCooldownUntil = accountAutoLoginCooldowns.get(accountKey) || 0;
+  if (Date.now() < accountCooldownUntil) {
+    const remainingMin = Math.ceil((accountCooldownUntil - Date.now()) / 60000);
+    console.log(`[NDUS Auto-Login] Ignored for Account ${targetAccountIndex !== undefined ? targetAccountIndex + 1 : 'All'}. On 30-min auto-login cooldown for another ${remainingMin} min to prevent login loops.`);
+    return null;
+  }
+
   // ── Single-flight lock: if a refresh is already running, wait for it ──
   if (_ndusRefreshInFlight) {
     console.log('[NDUS Auto-Login] Refresh already in-flight. Waiting for existing promise...');
@@ -628,6 +638,9 @@ export async function refreshNdusToken(whost, targetAccountIndex = undefined) {
     console.log(`[NDUS Auto-Login] Ignored. On cooldown for another ${remainingMin} min due to rate-limiting.`);
     return null;
   }
+
+  // Set 30-minute cooldown lock on auto-login for this target account to prevent infinite login loops
+  accountAutoLoginCooldowns.set(accountKey, Date.now() + 30 * 60 * 1000);
 
   // ── Start the actual refresh, wrapped in a single-flight promise ──
   _ndusRefreshInFlight = (async () => {
