@@ -320,11 +320,34 @@ export async function getNdusTokenDetails(whost = 'https://www.1024terabox.com')
   // IST Day-based rotation (Day 1 -> Account 1, Day 2 -> Account 2, etc.)
   const istDateStr = new Date().toLocaleDateString("en-US", { timeZone: "Asia/Kolkata" });
   const dayNum = new Date(istDateStr).getDate() || 1;
-  const selectedIndex = (dayNum - 1) % tokens.length;
-  const selectedToken = tokens[selectedIndex];
+  const preferredIndex = (dayNum - 1) % tokens.length;
+  
+  const now = Date.now();
+  const prefToken = tokens[preferredIndex];
+  const prefCooldown = ndusCooldowns.get(prefToken) || 0;
 
-  console.log(`[NDUS Pool] 📅 Strict Day Rotation: Day ${dayNum} IST → Premium Account ${selectedIndex + 1} selected (Token ${selectedIndex + 1}/${tokens.length})`);
-  return { token: selectedToken, selectedIndex, totalTokens: tokens.length };
+  // Check if primary today token is available (not on cooldown)
+  if (now >= prefCooldown) {
+    console.log(`[NDUS Pool] 📅 Day ${dayNum} IST → Premium Account ${preferredIndex + 1} selected (Token ${preferredIndex + 1}/${tokens.length})`);
+    return { token: prefToken, selectedIndex: preferredIndex, totalTokens: tokens.length };
+  }
+
+  // Primary account is on 20-min cooldown due to 400141! Switch to backup account
+  const remainingMin = Math.ceil((prefCooldown - now) / 60000);
+  console.warn(`[NDUS Pool] ⚠️ Account ${preferredIndex + 1} is on 20-min cooldown for another ${remainingMin} min. Switching to backup account...`);
+
+  for (let i = 0; i < tokens.length; i++) {
+    if (i === preferredIndex) continue;
+    const altToken = tokens[i];
+    const altCooldown = ndusCooldowns.get(altToken) || 0;
+    if (now >= altCooldown) {
+      console.log(`[NDUS Pool] 🔄 Temporarily switched to Account ${i + 1} (Token ${i + 1}/${tokens.length}) while Account ${preferredIndex + 1} is on 20-min cooldown.`);
+      return { token: altToken, selectedIndex: i, totalTokens: tokens.length, isBackup: true };
+    }
+  }
+
+  console.warn(`[NDUS Pool] All accounts are currently on cooldown. Reusing Account ${preferredIndex + 1}.`);
+  return { token: prefToken, selectedIndex: preferredIndex, totalTokens: tokens.length };
 }
 
 export async function getNdusToken(whost = 'https://www.1024terabox.com') {
@@ -332,8 +355,8 @@ export async function getNdusToken(whost = 'https://www.1024terabox.com') {
   return details.token;
 }
 
-// Put token on cooldown (default: 2 hours) when 400141 occurs
-export function markTokenCooldown(token, durationMs = 2 * 60 * 60 * 1000) {
+// Put token on cooldown (default: 20 minutes) when 400141 occurs
+export function markTokenCooldown(token, durationMs = 20 * 60 * 1000) {
   if (!token) return;
   const cooldownUntil = Date.now() + durationMs;
   ndusCooldowns.set(token, cooldownUntil);
@@ -1356,10 +1379,10 @@ export default async function handler(req, res) {
             console.warn(`🔗 Verification Link to Solve in VPS Browser:`);
             console.warn(`👉 ${vUrl}`);
             console.warn(`================================================================================\n`);
-            markTokenCooldown(ndusToken, 2 * 60 * 60 * 1000);
+            markTokenCooldown(ndusToken, 20 * 60 * 1000);
 
             // ── STEP 1: VPS Real Headless Browser Solve ──
-            console.log(`[Premium] 400141 challenge detected on Today's Account ${todayAccountDetails.selectedIndex + 1}. Launching Real VPS Chromium Browser...`);
+            console.log(`[Premium] 400141 challenge detected on Account ${todayAccountDetails.selectedIndex + 1}. Launching Real VPS Chromium Browser...`);
             try {
               const browserResult = await safeSolveChallengeWithBrowser(vUrl, ndusToken);
               if (browserResult && browserResult.success) {
@@ -1376,18 +1399,18 @@ export default async function handler(req, res) {
             }
             await new Promise(r => setTimeout(r, 1200));
 
-            console.log(`[Premium] Retrying shortUrlList with Today's Account ${todayAccountDetails.selectedIndex + 1} after Real Browser warmup...`);
+            console.log(`[Premium] Retrying shortUrlList with Account ${todayAccountDetails.selectedIndex + 1} after Real Browser warmup...`);
             ndusData = await app.shortUrlList(strippedShortUrl);
             console.log('[Premium] Post-Browser retry response:', JSON.stringify(ndusData));
 
-            // ── STEP 2: If STILL 400141, auto-login ONLY for TODAY'S Account ──
+            // ── STEP 2: If STILL 400141, auto-login DISABLED -> Switch to Backup Account for 20 mins ──
             if (ndusData && ndusData.errno === 400141) {
-              console.warn(`[Premium] Warmup retry still returned 400141 for Account ${todayAccountDetails.selectedIndex + 1}. Generating fresh NDUS token for Today's Account ONLY...`);
-              const freshTokenForToday = await refreshNdusToken(anonApp.params.whost, todayAccountDetails.selectedIndex);
-              if (freshTokenForToday) {
-                console.log(`[Premium] Successfully refreshed NDUS token for Today's Account ${todayAccountDetails.selectedIndex + 1}. Retrying request...`);
-                ndusToken = freshTokenForToday;
-                activeWorkingNdusToken = freshTokenForToday;
+              console.warn(`[Premium] Account ${todayAccountDetails.selectedIndex + 1} returned 400141. Auto-login disabled. Swapping to alternate account for 20 min...`);
+              const backupDetails = await getNdusTokenDetails(anonApp.params.whost);
+              if (backupDetails.token && backupDetails.token !== ndusToken) {
+                console.log(`[NDUS Pool] Swapping to Account ${backupDetails.selectedIndex + 1} (${backupDetails.isBackup ? 'Backup' : 'Primary'}). Retrying request...`);
+                ndusToken = backupDetails.token;
+                activeWorkingNdusToken = backupDetails.token;
                 browserId = getBrowserIdForToken(ndusToken);
                 app = new TeraBoxApp(buildCookie(ndusToken, browserId));
                 app.params.ua = anonApp.params.ua;
@@ -1396,7 +1419,7 @@ export default async function handler(req, res) {
                 app.params.uhost = anonApp.params.uhost;
                 premiumApp = app;
                 ndusData = await app.shortUrlList(strippedShortUrl);
-                console.log('[Premium] Fresh Token retry response:', JSON.stringify(ndusData));
+                console.log('[Premium] Alternate Account retry response:', JSON.stringify(ndusData));
               }
             }
           }
