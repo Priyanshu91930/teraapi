@@ -275,7 +275,25 @@ async function getAllNdusTokens(whost = 'https://www.1024terabox.com') {
     }
   }
 
-  return deduplicateNdusTokens(tokens);
+  const deduped = deduplicateNdusTokens(tokens);
+  const maxAllowed = credentials.length > 0 ? credentials.length : 10;
+
+  if (deduped.length > maxAllowed) {
+    console.log(`[NDUS Pool] Trimming accumulated pool from ${deduped.length} down to ${maxAllowed} active token(s) matching configured accounts.`);
+    const trimmed = deduped.slice(0, maxAllowed);
+    try {
+      connectToDatabase().then(() => {
+        SystemConfig.findOneAndUpdate(
+          { key: 'TERABOX_NDUS' },
+          { value: JSON.stringify(trimmed), updatedAt: new Date() },
+          { upsert: true }
+        ).catch(() => {});
+      });
+    } catch (e) {}
+    return trimmed;
+  }
+
+  return deduped;
 }
 
 // Function to get the active ndus token from pool using IST Day-based Rotation with automatic failover
@@ -671,22 +689,9 @@ export async function refreshNdusToken(whost) {
       }
 
       if (generatedTokens.length > 0) {
-        // Save generated tokens to MongoDB persistently (merge with existing manual tokens)
+        // Save fresh generated tokens to MongoDB persistently (replace old expired tokens)
         try {
-          const config = await SystemConfig.findOne({ key: 'TERABOX_NDUS' });
-          let mergedTokens = [...generatedTokens];
-          if (config && config.value) {
-            let existing = [];
-            try {
-              if (config.value.startsWith('[')) existing = JSON.parse(config.value);
-              else if (config.value.includes('|||')) existing = config.value.split('|||');
-              else existing = config.value.split(',');
-            } catch (e) { existing = [config.value]; }
-            existing.map(t => typeof t === 'string' ? t.trim() : '').filter(Boolean).forEach(t => {
-              if (!mergedTokens.includes(t)) mergedTokens.push(t);
-            });
-          }
-          mergedTokens = deduplicateNdusTokens(mergedTokens);
+          const mergedTokens = deduplicateNdusTokens([...generatedTokens]);
           await SystemConfig.findOneAndUpdate(
             { key: 'TERABOX_NDUS' },
             { value: JSON.stringify(mergedTokens), updatedAt: new Date() },
@@ -697,7 +702,7 @@ export async function refreshNdusToken(whost) {
             { value: JSON.stringify(mergedTokens), updatedAt: new Date() },
             { upsert: true }
           );
-          console.log(`[NDUS Auto-Login] Saved ${mergedTokens.length} full cookie token(s) to MongoDB configuration cache.`);
+          console.log(`[NDUS Auto-Login] Replaced old DB tokens with ${mergedTokens.length} fresh cookie token(s).`);
         } catch (dbErr) {
           console.error('[NDUS Auto-Login] Failed to save to MongoDB:', dbErr.message);
         }
