@@ -1339,54 +1339,32 @@ export default async function handler(req, res) {
             console.log('[Premium] Link is expired or deleted. Skipping token refresh.');
             listData = ndusData;
           } else if (ndusData && ndusData.errno === 400141) {
-            const vUrl = (ndusData.data && (ndusData.data.verify_url || ndusData.data.verifyUrl)) || `https://www.1024terabox.com/sharing/link?surl=${strippedShortUrl}`;
-            console.warn(`\n================================================================================`);
-            console.warn(`⚠️ TERABOX CAPTCHA / VERIFICATION CHALLENGE (errno 400141)`);
-            console.warn(`🔗 Verification Link to Solve in VPS Browser:`);
-            console.warn(`👉 ${vUrl}`);
-            console.warn(`================================================================================\n`);
+            console.warn(`[Premium] 400141 challenge detected on Account ${todayAccountDetails.selectedIndex + 1}. Marking on 20-min cooldown...`);
             markTokenCooldown(ndusToken, 20 * 60 * 1000);
 
-            // ── STEP 1: VPS Real Headless Browser Solve ──
-            console.log(`[Premium] 400141 challenge detected on Account ${todayAccountDetails.selectedIndex + 1}. Launching Real VPS Chromium Browser...`);
-            try {
-              const browserResult = await safeSolveChallengeWithBrowser(vUrl, ndusToken);
-              if (browserResult && browserResult.success) {
-                console.log(`[Premium] VPS Real Browser visit complete! Retrying shortUrlList...`);
-              }
-            } catch (bErr) {
-              console.warn('[Premium] VPS Browser solve exception:', bErr.message);
+            // ── STEP 1: INSTANT SWAP to Alternate Account (Zero Delay) ──
+            const altDetails = await getAlternateNdusTokenDetails(anonApp.params.whost, todayAccountDetails.selectedIndex);
+            if (altDetails.token && altDetails.token !== ndusToken) {
+              console.log(`[NDUS Pool] Instant Failover: Swapping to Alternate Account ${altDetails.selectedIndex + 1} for link ${strippedShortUrl}...`);
+              ndusToken = altDetails.token;
+              activeWorkingNdusToken = altDetails.token;
+              browserId = getBrowserIdForToken(ndusToken);
+              app = new TeraBoxApp(buildCookie(ndusToken, browserId));
+              app.params.ua = anonApp.params.ua;
+              app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
+              app.params.whost = anonApp.params.whost;
+              app.params.uhost = anonApp.params.uhost;
+              premiumApp = app;
+              ndusData = await app.shortUrlList(strippedShortUrl);
+              console.log('[Premium] Alternate Account retry response:', JSON.stringify(ndusData));
             }
 
-            try {
-              await app.updateAppData(`sharing/link?surl=${strippedShortUrl}`);
-            } catch (wErr) {
-              console.warn('[Premium] Session warmup error:', wErr.message);
-            }
-            await new Promise(r => setTimeout(r, 1200));
-
-            console.log(`[Premium] Retrying shortUrlList with Account ${todayAccountDetails.selectedIndex + 1} after Real Browser warmup...`);
-            ndusData = await app.shortUrlList(strippedShortUrl);
-            console.log('[Premium] Post-Browser retry response:', JSON.stringify(ndusData));
-
-            // ── STEP 2: If STILL 400141, auto-login DISABLED -> Try Alternate Account ONLY for THIS link ──
+            // ── STEP 2: Quick HTML session warmup if still 400141 ──
             if (ndusData && ndusData.errno === 400141) {
-              console.warn(`[Premium] Account ${todayAccountDetails.selectedIndex + 1} returned 400141 for link ${strippedShortUrl}. Auto-login disabled. Trying alternate account for this link...`);
-              const altDetails = await getAlternateNdusTokenDetails(anonApp.params.whost, todayAccountDetails.selectedIndex);
-              if (altDetails.token && altDetails.token !== ndusToken) {
-                console.log(`[NDUS Pool] Retrying link ${strippedShortUrl} using Alternate Account ${altDetails.selectedIndex + 1}...`);
-                ndusToken = altDetails.token;
-                activeWorkingNdusToken = altDetails.token;
-                browserId = getBrowserIdForToken(ndusToken);
-                app = new TeraBoxApp(buildCookie(ndusToken, browserId));
-                app.params.ua = anonApp.params.ua;
-                app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
-                app.params.whost = anonApp.params.whost;
-                app.params.uhost = anonApp.params.uhost;
-                premiumApp = app;
+              try {
+                await app.updateAppData(`sharing/link?surl=${strippedShortUrl}`);
                 ndusData = await app.shortUrlList(strippedShortUrl);
-                console.log('[Premium] Alternate Account retry response:', JSON.stringify(ndusData));
-              }
+              } catch (wErr) {}
             }
           }
 
