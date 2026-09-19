@@ -1339,8 +1339,15 @@ export default async function handler(req, res) {
             console.log('[Premium] Link is expired or deleted. Skipping token refresh.');
             listData = ndusData;
           } else if (ndusData && ndusData.errno === 400141) {
+            const vUrl = (ndusData.data && (ndusData.data.verify_url || ndusData.data.verifyUrl)) || `https://www.1024terabox.com/sharing/link?surl=${strippedShortUrl}`;
             console.warn(`[Premium] 400141 challenge detected on Account ${todayAccountDetails.selectedIndex + 1}. Marking on 20-min cooldown...`);
             markTokenCooldown(ndusToken, 20 * 60 * 1000);
+
+            // ── Background Browser Solve (Async / Non-Blocking) ──
+            console.log(`[Premium] Triggering background browser verification for Account ${todayAccountDetails.selectedIndex + 1}...`);
+            safeSolveChallengeWithBrowser(vUrl, ndusToken).catch(bErr => {
+              console.warn('[Premium] Background browser solve exception:', bErr.message);
+            });
 
             // ── STEP 1: INSTANT SWAP to Alternate Account (Zero Delay) ──
             const altDetails = await getAlternateNdusTokenDetails(anonApp.params.whost, todayAccountDetails.selectedIndex);
