@@ -57,8 +57,13 @@ function buildCookie(ndusToken, browserId) {
 export function extractNdusValue(str) {
   if (!str) return '';
   const match = String(str).match(/ndus=([^;]+)/i);
-  if (match) return match[1].trim();
-  return String(str).split(';')[0].trim();
+  const raw = match ? match[1].trim() : String(str).split(';')[0].trim();
+  // TeraBox ndus tokens starting with the same 12 characters belong to the SAME account.
+  // Returning the 12-char account signature enforces true multi-account uniqueness.
+  if (raw.length >= 12) {
+    return raw.slice(0, 12);
+  }
+  return raw;
 }
 
 export function deduplicateNdusTokens(tokenList) {
@@ -68,9 +73,9 @@ export function deduplicateNdusTokens(tokenList) {
     if (!t || typeof t !== 'string') continue;
     const trimmed = t.trim();
     if (!trimmed) continue;
-    const coreVal = extractNdusValue(trimmed);
-    if (coreVal && !seen.has(coreVal)) {
-      seen.add(coreVal);
+    const accountSig = extractNdusValue(trimmed);
+    if (accountSig && !seen.has(accountSig)) {
+      seen.add(accountSig);
       result.push(trimmed);
     }
   }
