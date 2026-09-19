@@ -272,28 +272,11 @@ async function getAllNdusTokens(whost = 'https://www.1024terabox.com') {
     }
   }
 
-  // 3. Auto-bootstrap: Trigger auto-login if token pool has fewer tokens than configured credentials
+  // 3. Auto-bootstrap: Trigger auto-login in background if token pool has fewer tokens than configured credentials
   const credentials = getConfiguredCredentials();
   if (credentials.length > 0 && tokens.length < credentials.length && whost) {
-    console.log(`[NDUS Pool] Have ${tokens.length} token(s) but ${credentials.length} account credential(s) configured. Running auto-login for missing account(s)...`);
-    const freshToken = await refreshNdusToken(whost);
-    if (freshToken) {
-      try {
-        await connectToDatabase();
-        const config = await SystemConfig.findOne({ key: 'TERABOX_NDUS' });
-        if (config && config.value) {
-          let parsed = [];
-          try {
-            if (config.value.startsWith('[')) parsed = JSON.parse(config.value);
-            else if (config.value.includes('|||')) parsed = config.value.split('|||');
-            else parsed = config.value.split(',');
-          } catch (e) { parsed = [config.value]; }
-          parsed.map(t => typeof t === 'string' ? t.trim() : '').filter(Boolean).forEach(t => {
-            if (!tokens.includes(t)) tokens.push(t);
-          });
-        }
-      } catch (e) {}
-    }
+    console.log(`[NDUS Pool] Have ${tokens.length} token(s) but ${credentials.length} account credential(s) configured. Triggering background auto-login for missing account(s)...`);
+    refreshNdusToken(whost).catch(err => console.error('[NDUS Pool] Background auto-login error:', err.message));
   }
 
   const deduped = deduplicateNdusTokens(tokens);
