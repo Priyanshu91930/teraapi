@@ -29,94 +29,27 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  const apiKey = req.headers['x-api-key'] || req.query.apiKey;
-
-  // ── PREMIUM GATE: /download is PAID-only ──
-  // Master API_KEY (website/free users) must NOT access the NDUS leech proxy.
-  // Only verified active ApiSubscription tokens or Google authenticated accounts are permitted.
-  const isMasterKey = apiKey && apiKey === process.env.API_KEY;
-  let isPremium = false;
-  let isTrial = false;
-  let userEmail = '';
-
-  if (isMasterKey) {
-    console.log('[ROUTER] /download: master_key entitlement=free → PREMIUM_REQUIRED');
-    return res.status(403).json({
-      success: false,
-      code: 'PREMIUM_REQUIRED',
-      message: 'This feature requires an active premium plan.'
-    });
-  } else if (apiKey) {
-    try {
-      await connectToDatabase();
-
-      // 1. Google Auth session check
-      const decoded = verifySessionToken(apiKey);
-      if (decoded && decoded.email) {
-        userEmail = decoded.email.toLowerCase().trim();
-        const user = await User.findOne({ email: userEmail });
-        if (user) {
-          const isPremiumUser = user.premiumStatus === 'premium' || user.plan === 'premium';
-          const isExpired = user.premiumExpiresAt && new Date(user.premiumExpiresAt) < new Date();
-
-          if (isPremiumUser && !isExpired) {
-            isPremium = true;
-            console.log(`[ROUTER] /download: user=${userEmail} entitlement=paid(${user.plan})`);
-          } else if (isPremiumUser && isExpired) {
-            user.plan = 'free';
-            user.premiumStatus = 'expired';
-            await user.save();
-            return res.status(403).json({ success: false, code: 'PREMIUM_EXPIRED', message: 'Your premium plan has expired.' });
-          } else {
-            // Free account - check trial limit
-            const trials = user.freePremiumUsesRemaining !== undefined ? user.freePremiumUsesRemaining : 3;
-            if (trials > 0) {
-              isPremium = true;
-              isTrial = true;
-              console.log(`[ROUTER] /download: user=${userEmail} entitlement=free_trial trials_remaining=${trials}`);
-            } else {
-              return res.status(403).json({ success: false, code: 'PREMIUM_REQUIRED', message: 'You have exhausted your 3 free trials. Please upgrade to premium.' });
-            }
-          }
-        }
-      }
-
-      // 2. Developer token check (Backward Compatibility)
-      if (!isPremium && !isTrial) {
-        const sub = await ApiSubscription.findOne({ token: apiKey });
-        if (sub && sub.status === 'active') {
-          const isExpired = sub.expiresAt && new Date(sub.expiresAt) < new Date();
-          if (!isExpired) {
-            isPremium = true;
-            console.log(`[ROUTER] /download: developer=${sub.email} entitlement=developer`);
-          } else {
-            return res.status(403).json({ success: false, code: 'PREMIUM_EXPIRED', message: 'Your premium plan has expired.' });
-          }
-        }
-      }
-    } catch (dbErr) {
-      console.error('[download] Entitlement DB check failed:', dbErr.message);
-      return res.status(500).json({ error: 'Internal entitlement validation error.' });
-    }
-  } else {
-    return res.status(401).json({ error: 'Unauthorized. Missing API key.' });
-  }
-
-  if (!isPremium && !isTrial) {
-    return res.status(403).json({ success: false, code: 'PREMIUM_REQUIRED', message: 'This feature requires an active premium plan.' });
-  }
-
-  const { url, filename } = req.query;
+  const { url, filename, b64, cookie } = req.query;
   if (!url) {
     return res.status(400).json({ error: "url query parameter is required" });
   }
 
+  let decodedUrl = url;
+  if (b64 === '1' || b64 === 'true') {
+    try {
+      decodedUrl = Buffer.from(url, 'base64').toString('utf-8');
+    } catch (e) {
+      console.error('[download] Base64 decode failed:', e.message);
+    }
+  }
+
   let parsed;
   try {
-    parsed = new URL(url);
+    parsed = new URL(decodedUrl);
   } catch (e) {
     return res.status(400).json({ error: "Invalid download URL" });
   }
+
   if (!/^https?:$/i.test(parsed.protocol) || isPrivateHost(parsed.hostname)) {
     return res.status(400).json({ error: "Invalid download URL" });
   }
@@ -125,20 +58,18 @@ export default async function handler(req, res) {
   // Determine referer from the upstream URL domain
   let referer = 'https://www.terabox.com/';
   try {
-    const u = new URL(url);
     const tbDomains = ['1024tera','1024terabox','terasharefile','terashare','terasharelink','nephobox','teraboxapp','tibbox','tibibox','freeterabox','teraboxlink','mirrobox','4funbox','terabox.fun','momerybox','terabox.app','terabox.ap','dubox','terabox.best','teraboxshare','terafileshare','1024box'];
-    if (tbDomains.some(d => u.hostname.includes(d))) {
+    if (tbDomains.some(d => parsed.hostname.includes(d))) {
       referer = 'https://www.1024terabox.com/';
     }
   } catch {}
-  
+
   const headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Accept': '*/*',
     'Referer': referer,
   };
-  const queryCookie = req.query.cookie;
-  const sessionCookie = queryCookie || ndusToken || "";
+  const sessionCookie = cookie || ndusToken || "";
   if (sessionCookie) headers['Cookie'] = sessionCookie.includes('=') ? sessionCookie : `ndus=${sessionCookie}`;
 
   const range = req.headers['range'];
@@ -147,7 +78,7 @@ export default async function handler(req, res) {
   let upstream;
   try {
     // Perform manual redirect handling to prevent fetch from stripping cross-domain Cookie headers
-    upstream = await fetch(url, { headers, redirect: 'manual' });
+    upstream = await fetch(decodedUrl, { headers, redirect: 'manual' });
     if ([301, 302, 303, 307, 308].includes(upstream.status)) {
       const location = upstream.headers.get('location');
       if (location) {
@@ -164,21 +95,9 @@ export default async function handler(req, res) {
   } catch (e) {
     return res.status(502).json({ error: 'Failed to reach upstream: ' + e.message });
   }
+
   if (!upstream.ok && upstream.status !== 206) {
     return res.status(upstream.status).json({ error: `Upstream returned HTTP ${upstream.status}` });
-  }
-
-  // Consume free trial atomically on successful upstream response
-  if (isTrial) {
-    const success = await consumeFreeTrial(userEmail);
-    if (!success) {
-      console.warn(`[Trial] /download trial consumption failed for ${userEmail} (trials exhausted).`);
-      return res.status(403).json({
-        success: false,
-        code: 'PREMIUM_REQUIRED',
-        message: 'You have exhausted your 3 free premium trials. Please buy a plan to continue.'
-      });
-    }
   }
 
   const copyHeader = (name, value) => {
