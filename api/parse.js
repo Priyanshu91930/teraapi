@@ -4,6 +4,24 @@ import { youtube, igdl, ttdl, fbdown } from 'btch-downloader';
 import { recordPageView, connectToDatabase, ApiSubscription, SystemConfig, LinkCache, User } from '../db.js';
 import { verifySessionToken } from './auth/me.js';
 import crypto from 'node:crypto';
+import { ProxyAgent, setGlobalDispatcher } from 'undici';
+
+let _globalProxyConfigured = false;
+export function setupWebshareProxy() {
+  const proxyUrl = process.env.PROXY_URL;
+  if (proxyUrl && !_globalProxyConfigured) {
+    try {
+      const agent = new ProxyAgent(proxyUrl);
+      setGlobalDispatcher(agent);
+      _globalProxyConfigured = true;
+      const masked = proxyUrl.replace(/:[^:@]+@/, ':****@');
+      console.log(`[Webshare Proxy] 🌐 Global Undici ProxyAgent attached to outbound requests: ${masked}`);
+    } catch (err) {
+      console.error('[Webshare Proxy] Failed to attach ProxyAgent dispatcher:', err.message);
+    }
+  }
+}
+setupWebshareProxy();
 
 let _browserSolverMod = null;
 async function safeSolveChallengeWithBrowser(verifyUrl, ndusToken) {

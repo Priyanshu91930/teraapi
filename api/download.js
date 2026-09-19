@@ -1,7 +1,9 @@
 import { Readable } from 'stream';
 import { connectToDatabase, SystemConfig, ApiSubscription, User } from '../db.js';
 import { verifySessionToken } from './auth/me.js';
-import { consumeFreeTrial, getNdusToken, markTokenCooldown } from './parse.js';
+import { consumeFreeTrial, getNdusToken, markTokenCooldown, setupWebshareProxy } from './parse.js';
+
+setupWebshareProxy();
 
 export const config = { maxDuration: 60 };
 
