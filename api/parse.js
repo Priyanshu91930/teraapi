@@ -1294,24 +1294,28 @@ export default async function handler(req, res) {
     if (isPremium) {
       // ── PREMIUM ROUTE ──
       console.log(`[ROUTER] user=${entitlement.userId || 'api'} feature=parse entitlement=paid`);
-      console.log('[ROUTER] Using premium route (NDUS session)...');
+      console.log('[ROUTER] Using premium route (NDUS session pool)...');
+      
+      const poolTokens = await getAllNdusTokens(anonApp.params.whost);
       const todayAccountDetails = await getNdusTokenDetails(anonApp.params.whost);
-      let ndusToken = todayAccountDetails.token;
-      activeWorkingNdusToken = ndusToken;
-      browserId = getBrowserIdForToken(ndusToken);
-      let autoLoginAttempted = false;
+      const startIndex = todayAccountDetails.selectedIndex;
+      
+      // Attempt all accounts in the pool sequentially before falling back to Anonymous
+      for (let attempt = 0; attempt < Math.max(1, poolTokens.length); attempt++) {
+        const curIndex = (startIndex + attempt) % Math.max(1, poolTokens.length);
+        let curToken = poolTokens[curIndex] || todayAccountDetails.token;
 
-      // Bootstrap: no token anywhere? Try auto-login for self-start.
-      if (!ndusToken) {
-        console.log('[Premium] No ndus token found. Trying credential bootstrap...');
-        ndusToken = await refreshNdusToken(anonApp.params.whost, todayAccountDetails.selectedIndex) || '';
-        activeWorkingNdusToken = ndusToken;
-        browserId = getBrowserIdForToken(ndusToken);
-        autoLoginAttempted = true;
-      }
+        if (!curToken) {
+          console.log(`[Premium] Account ${curIndex + 1}: No token found. Bootstrapping...`);
+          curToken = await refreshNdusToken(anonApp.params.whost, curIndex) || '';
+        }
+        if (!curToken) continue;
 
-      if (ndusToken) {
-        let app = new TeraBoxApp(buildCookie(ndusToken, browserId));
+        activeWorkingNdusToken = curToken;
+        browserId = getBrowserIdForToken(curToken);
+        console.log(`[NDUS Pool] 🔄 Attempt ${attempt + 1}/${poolTokens.length || 1}: Trying Account ${curIndex + 1}...`);
+
+        let app = new TeraBoxApp(buildCookie(curToken, browserId));
         app.params.ua = anonApp.params.ua;
         app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
         app.params.whost = anonApp.params.whost;
@@ -1320,7 +1324,7 @@ export default async function handler(req, res) {
 
         try {
           let ndusData = await app.shortUrlList(strippedShortUrl);
-          console.log('[Premium] NDUS session response:', JSON.stringify(ndusData));
+          console.log(`[Premium] Account ${curIndex + 1} NDUS session response:`, JSON.stringify(ndusData));
 
           // Link expiry check BEFORE token refresh
           const isLinkExpired = ndusData && (
@@ -1336,43 +1340,25 @@ export default async function handler(req, res) {
           );
 
           if (isLinkExpired) {
-            console.log('[Premium] Link is expired or deleted. Skipping token refresh.');
+            console.log('[Premium] Link is expired or deleted. Skipping further account retries.');
             listData = ndusData;
-          } else if (ndusData && ndusData.errno === 400141) {
-            const vUrl = (ndusData.data && (ndusData.data.verify_url || ndusData.data.verifyUrl)) || `https://www.1024terabox.com/sharing/link?surl=${strippedShortUrl}`;
-            console.warn(`[Premium] 400141 challenge detected on Account ${todayAccountDetails.selectedIndex + 1}. Marking on 20-min cooldown...`);
-            markTokenCooldown(ndusToken, 20 * 60 * 1000);
+            break;
+          }
 
-            // ── Background Browser Solve (Async / Non-Blocking) ──
-            console.log(`[Premium] Triggering background browser verification for Account ${todayAccountDetails.selectedIndex + 1}...`);
-            safeSolveChallengeWithBrowser(vUrl, ndusToken).catch(bErr => {
+          if (ndusData && ndusData.errno === 400141) {
+            const vUrl = (ndusData.data && (ndusData.data.verify_url || ndusData.data.verifyUrl)) || `https://www.1024terabox.com/sharing/link?surl=${strippedShortUrl}`;
+            console.warn(`[Premium] 400141 challenge detected on Account ${curIndex + 1}. Marking on 20-min cooldown...`);
+            markTokenCooldown(curToken, 20 * 60 * 1000);
+
+            // Trigger background browser verification async
+            console.log(`[Premium] Triggering background browser verification for Account ${curIndex + 1}...`);
+            safeSolveChallengeWithBrowser(vUrl, curToken).catch(bErr => {
               console.warn('[Premium] Background browser solve exception:', bErr.message);
             });
 
-            // ── STEP 1: INSTANT SWAP to Alternate Account (Zero Delay) ──
-            const altDetails = await getAlternateNdusTokenDetails(anonApp.params.whost, todayAccountDetails.selectedIndex);
-            if (altDetails.token && altDetails.token !== ndusToken) {
-              console.log(`[NDUS Pool] Instant Failover: Swapping to Alternate Account ${altDetails.selectedIndex + 1} for link ${strippedShortUrl}...`);
-              ndusToken = altDetails.token;
-              activeWorkingNdusToken = altDetails.token;
-              browserId = getBrowserIdForToken(ndusToken);
-              app = new TeraBoxApp(buildCookie(ndusToken, browserId));
-              app.params.ua = anonApp.params.ua;
-              app.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
-              app.params.whost = anonApp.params.whost;
-              app.params.uhost = anonApp.params.uhost;
-              premiumApp = app;
-              ndusData = await app.shortUrlList(strippedShortUrl);
-              console.log('[Premium] Alternate Account retry response:', JSON.stringify(ndusData));
-            }
-
-            // ── STEP 2: Quick HTML session warmup if still 400141 ──
-            if (ndusData && ndusData.errno === 400141) {
-              try {
-                await app.updateAppData(`sharing/link?surl=${strippedShortUrl}`);
-                ndusData = await app.shortUrlList(strippedShortUrl);
-              } catch (wErr) {}
-            }
+            // Swapping immediately to next account in pool
+            console.log(`[NDUS Pool] ⚡ 400141 challenge on Account ${curIndex + 1} -> Swapping immediately to next account...`);
+            continue;
           }
 
           if (ndusData && ndusData.errno === 0) {
@@ -1380,18 +1366,20 @@ export default async function handler(req, res) {
             if (activeWorkingNdusToken) {
               updatePrimaryNdusInDb(activeWorkingNdusToken).catch(e => {});
             }
-          } else if (ndusData && !isLinkExpired) {
+            break; // SUCCESS! Exit loop
+          } else if (ndusData) {
             tokenExpiredDetected = true;
-            console.warn(`[Premium] Token returned error code ${ndusData.errno}.`);
+            console.warn(`[Premium] Account ${curIndex + 1} returned errno ${ndusData.errno}. Trying next account in pool...`);
           }
         } catch (e) {
-          console.error('[Premium] NDUS session failed:', e.message);
+          console.error(`[Premium] Account ${curIndex + 1} NDUS session failed (${e.message}). Swapping to next account in pool...`);
+          // Continue loop to try next Premium Account in pool
         }
       }
 
-      // Premium fallback: if NDUS failed, try anonymous (only for paid users)
+      // Premium fallback: ONLY if ALL Premium NDUS accounts in pool failed, try anonymous (as absolute last resort)
       if (!listData || listData.errno !== 0) {
-        console.log('[Premium] NDUS failed. Attempting anonymous fallback for paid user...');
+        console.log('[Premium] All NDUS accounts in pool failed or challenge-locked. Attempting anonymous fallback for paid user...');
         try {
           const anonFallback = new TeraBoxApp('');
           anonFallback.params.ua = anonApp.params.ua;
