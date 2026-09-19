@@ -1183,7 +1183,11 @@ export default async function handler(req, res) {
     const strippedShortUrl = shortUrl.replace(/^1/, '');
 
     const outboundIp = await getPublicIp();
-    const serverModeLog = process.env.VERCEL ? `Vercel Proxy -> VPS (${outboundIp})` : `VPS Public IP (${outboundIp})`;
+    const serverModeLog = process.env.VERCEL ? `Vercel (${outboundIp})` : `VPS (${outboundIp})`;
+    if (process.env.PROXY_URL) {
+      const maskedProxy = process.env.PROXY_URL.replace(/:[^:@]+@/, ':****@');
+      console.log(`[Webshare Proxy] 🌐 Active Webshare Proxy detected in Vercel Env: ${maskedProxy}`);
+    }
     console.log(`[VPS Server] 🌐 Processing TeraBox API call via ${serverModeLog} for surl: ${strippedShortUrl}`);
 
     // ─── CACHE CHECK (Execute first to protect trials & prevent load) ───
