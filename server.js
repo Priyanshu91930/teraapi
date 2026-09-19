@@ -345,7 +345,7 @@ app.get('/parse', async (req, res) => {
 });
 
 app.get(['/download', '/download.php'], async (req, res) => {
-  let { url, filename, cookie, b64 } = req.query;
+  let { url, filename, cookie, b64, stream, type } = req.query;
 
   if (!url) {
     return res.status(400).json({ error: "url query parameter is required" });
@@ -402,21 +402,51 @@ app.get(['/download', '/download.php'], async (req, res) => {
   } catch (e) {
     return res.status(502).json({ error: 'Failed to reach upstream: ' + e.message });
   }
+
   if (!upstream.ok && upstream.status !== 206) {
     return res.status(upstream.status).json({ error: `Upstream returned HTTP ${upstream.status}` });
   }
 
+  // Check if upstream returned a JSON API response (e.g. from /share/streaming or /share/download API call)
+  const contentTypeRaw = upstream.headers.get('content-type') || '';
+  if (contentTypeRaw.includes('application/json') || url.includes('/share/streaming') || url.includes('/share/download')) {
+    try {
+      const jsonText = await upstream.text();
+      const jsonData = JSON.parse(jsonText);
+      const realCdnUrl = jsonData.dlink || (jsonData.urls && jsonData.urls[0] && (jsonData.urls[0].url || jsonData.urls[0].dlink)) || jsonData.stream_url;
+      if (realCdnUrl) {
+        console.log(`[VPS Proxy Download] Resolved real CDN target from JSON: ${realCdnUrl.substring(0, 80)}...`);
+        upstream = await fetch(realCdnUrl, { headers, redirect: 'follow' });
+      } else {
+        return res.status(200).type('application/json').send(jsonText);
+      }
+    } catch (jsonErr) {
+      console.warn('[VPS Proxy Download] Response was not valid JSON, proceeding with stream pipe');
+    }
+  }
+
+  const isStreamMode = stream === '1' || type === 'stream' || type === 'm3u8' || req.query.inline === '1';
+
+  let finalContentType = upstream.headers.get('content-type') || 'video/mp4';
+  if (isStreamMode && (finalContentType.includes('octet-stream') || finalContentType.includes('text/plain') || !finalContentType)) {
+    finalContentType = 'video/mp4';
+  }
+
+  res.setHeader('Content-Type', finalContentType);
   const copyHeader = (name, value) => {
     if (value) res.setHeader(name, value);
   };
-  copyHeader('Content-Type', upstream.headers.get('content-type'));
   copyHeader('Content-Length', upstream.headers.get('content-length'));
   copyHeader('Content-Range', upstream.headers.get('content-range'));
   copyHeader('Accept-Ranges', upstream.headers.get('accept-ranges'));
 
-  if (filename) {
+  if (isStreamMode) {
+    res.setHeader('Content-Disposition', 'inline');
+  } else if (filename) {
     const safe = String(filename).replace(/[^\w\-. ]/g, '_');
     res.setHeader('Content-Disposition', `attachment; filename="${safe}"`);
+  } else {
+    res.setHeader('Content-Disposition', 'inline');
   }
 
   res.status(upstream.status);

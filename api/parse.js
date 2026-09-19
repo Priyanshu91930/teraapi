@@ -1719,7 +1719,7 @@ export default async function handler(req, res) {
           const rawStreamingUrl = `${anonApp.params.whost}/share/streaming?app_id=250528&web=1&channel=dubian-wap&clienttype=0&path=${encodeURIComponent(file.path || '')}&fid=${file.fs_id}&uk=${listData.uk}&shareid=${shareId}&sign=${sign}&timestamp=${timestamp}&type=M3U8_AUTO_720`;
           const b64Stream = Buffer.from(rawStreamingUrl).toString('base64');
           const sessionCookie = ndusToken ? buildCookie(ndusToken, browserId) : `browserid=${browserId}`;
-          streamUrl = `https://api.teraboxdownloader.co.in/download.php?url=${encodeURIComponent(b64Stream)}&b64=1&type=m3u8&cookie=${encodeURIComponent(sessionCookie)}`;
+          streamUrl = `https://api.teraboxdownloader.co.in/download.php?url=${encodeURIComponent(b64Stream)}&b64=1&stream=1&type=stream&cookie=${encodeURIComponent(sessionCookie)}`;
           debugStreamEndpoint = 'vps_m3u8_proxy';
           console.log(`[Parse] M3U8 stream URL constructed: ${streamUrl.substring(0, 100)}...`);
         } catch (streamErr) {
