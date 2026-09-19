@@ -299,9 +299,9 @@ async function getAllNdusTokens(whost = 'https://www.1024terabox.com') {
   const deduped = deduplicateNdusTokens(tokens);
   const maxAllowed = credentials.length > 0 ? credentials.length : 10;
 
-  if (deduped.length > maxAllowed) {
-    console.log(`[NDUS Pool] Trimming accumulated pool from ${deduped.length} down to ${maxAllowed} active token(s) matching configured accounts.`);
+  if (deduped.length !== tokens.length || deduped.length > maxAllowed) {
     const trimmed = deduped.slice(0, maxAllowed);
+    console.log(`[NDUS Pool] Cleaned duplicate/excess tokens from MongoDB pool. Now using ${trimmed.length} unique account token(s).`);
     try {
       connectToDatabase().then(() => {
         SystemConfig.findOneAndUpdate(
