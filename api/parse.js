@@ -399,8 +399,9 @@ export async function updatePrimaryNdusInDb(workingToken) {
       } catch (e) { tokens = [config.value]; }
     }
     tokens = tokens.map(t => typeof t === 'string' ? t.trim() : '').filter(Boolean);
-    // Put workingToken at the front of pool
-    tokens = [workingToken, ...tokens.filter(t => t !== workingToken)];
+    const workAccountSig = extractNdusValue(workingToken);
+    tokens = [workingToken, ...tokens.filter(t => extractNdusValue(t) !== workAccountSig)];
+    tokens = deduplicateNdusTokens(tokens);
     await SystemConfig.findOneAndUpdate(
       { key: 'TERABOX_NDUS' },
       { value: JSON.stringify(tokens), updatedAt: new Date() },
