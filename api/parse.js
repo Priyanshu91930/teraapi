@@ -1234,12 +1234,15 @@ export default async function handler(req, res) {
         const cacheAgeMs = cachedRecord.createdAt ? (Date.now() - new Date(cachedRecord.createdAt).getTime()) : 99999999;
         const cachedList = cachedRecord.response && cachedRecord.response.list ? cachedRecord.response.list : [];
         const shouldPurgeCache = cachedList.some(item => {
-          // Purge if dlink is missing or has error
-          return !item.dlink || item.dlink.startsWith('ERROR');
+          // Purge if dlink is missing, has error, or contains legacy download.php proxy URL
+          return !item.dlink || 
+                 item.dlink.startsWith('ERROR') || 
+                 (item.stream_url && item.stream_url.includes('download.php')) ||
+                 (item.dlink && item.dlink.includes('download.php'));
         });
 
         if (shouldPurgeCache) {
-          console.log(`[Cache Purge] Purging cached record with missing dlink for surl: ${strippedShortUrl}`);
+          console.log(`[Cache Purge] Purging cached record with missing/legacy proxy dlink for surl: ${strippedShortUrl}`);
           await LinkCache.deleteOne({ shortUrl: strippedShortUrl });
         } else if (cacheAgeMs < 10 * 60 * 1000) {
           console.log(`[Cache Hit] Serving fresh cached response (${Math.round(cacheAgeMs/60000)}m old) for surl: ${strippedShortUrl}`);
