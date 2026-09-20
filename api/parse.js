@@ -1388,6 +1388,16 @@ export default async function handler(req, res) {
             continue;
           }
 
+          if (ndusData && (ndusData.errno === 4000020 || ndusData.errno === -6 || ndusData.errno === 105)) {
+            console.warn(`[Premium] Account ${curIndex + 1} session token expired (errno ${ndusData.errno}). Triggering auto-login refresh...`);
+            markTokenCooldown(curToken, 15 * 60 * 1000);
+            refreshNdusToken(anonApp.params.whost, curIndex).catch(err => {
+              console.error(`[NDUS Pool] Auto-login refresh failed for Account ${curIndex + 1}:`, err.message);
+            });
+            console.log(`[NDUS Pool] ⚡ Token expired on Account ${curIndex + 1} -> Swapping immediately to next account...`);
+            continue;
+          }
+
           if (ndusData && ndusData.errno === 0) {
             listData = ndusData;
             if (activeWorkingNdusToken) {
