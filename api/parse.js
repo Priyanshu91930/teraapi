@@ -1757,22 +1757,20 @@ export default async function handler(req, res) {
           const b64Stream = Buffer.from(rawStreamingUrl).toString('base64');
           const sessionCookie = ndusToken ? buildCookie(ndusToken, browserId) : `browserid=${browserId}`;
           streamUrl = `${currentBaseUrl}/download.php?url=${encodeURIComponent(b64Stream)}&b64=1&stream=1&type=stream&cookie=${encodeURIComponent(sessionCookie)}`;
-          debugStreamEndpoint = 'vps_m3u8_proxy';
-          console.log(`[Parse] M3U8 stream URL constructed: ${streamUrl.substring(0, 100)}...`);
-        } catch (streamErr) {
-          console.error('[Parse] Stream URL construction failed:', streamErr.message);
-          streamUrl = '';
-        }
+      // Use direct TeraBox CDN link for streaming to eliminate 100% of Vercel and Webshare streaming bandwidth
+      const directCdnUrl = dlink || '';
+      if (isVideo && !streamUrl) {
+        streamUrl = directCdnUrl;
       }
 
-      const finalDlink = dlink || streamUrl || '';
+      const finalDlink = directCdnUrl || streamUrl || '';
       return {
         name: file.server_filename || 'video.mp4',
         size: file.size ? formatBytes(Number(file.size)) : 'Unknown',
         thumbnail: file.thumbs?.url3 || file.thumbs?.url1 || '',
         dlink: finalDlink,
         download_url: finalDlink,
-        stream_url: isVideo ? (streamUrl || finalDlink) : '',
+        stream_url: isVideo ? (directCdnUrl || streamUrl) : '',
         // Mark file as unavailable if both download and stream failed
         status: (!finalDlink && (!streamUrl || streamUrl.startsWith('ERROR:'))) ? 'unavailable' : 'ok',
         debug_sign: sign,
