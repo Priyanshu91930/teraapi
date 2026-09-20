@@ -1234,12 +1234,11 @@ export default async function handler(req, res) {
         const cacheAgeMs = cachedRecord.createdAt ? (Date.now() - new Date(cachedRecord.createdAt).getTime()) : 99999999;
         const cachedList = cachedRecord.response && cachedRecord.response.list ? cachedRecord.response.list : [];
         const shouldPurgeCache = cachedList.some(item => {
-          // Purge if dlink is missing, has error, or stream_url is not using the new inline stream proxy
+          // Purge if dlink is missing, has error, or contains legacy download.php proxy URL
           return !item.dlink || 
                  item.dlink.startsWith('ERROR') || 
-                 !item.stream_url ||
-                 !item.stream_url.includes('download.php') ||
-                 !item.stream_url.includes('inline=1');
+                 (item.stream_url && item.stream_url.includes('download.php')) ||
+                 (item.dlink && item.dlink.includes('download.php'));
         });
 
         if (shouldPurgeCache) {
@@ -1753,22 +1752,16 @@ export default async function handler(req, res) {
 
       // CAPTCHA verification required block removed to prevent loops in India
 
-      // Direct 0-bandwidth download & inline streaming configuration
-      // dlink: raw direct TeraBox CDN URL (for high-speed direct file downloads)
-      // stream_url: inline streaming proxy that changes Content-Disposition to 'inline' so ExoPlayer streams inline without pre-downloading
+      // Direct 0-bandwidth streaming & download configuration
+      // Returns raw TeraBox CDN link directly to ensure 0 Vercel bandwidth and 0 Webshare proxy bandwidth
       const directCdnUrl = dlink || '';
-      const safeName = file.server_filename || 'video.mp4';
-      const inlineStreamUrl = (isVideo && directCdnUrl)
-        ? `${currentBaseUrl}/download.php?url=${encodeURIComponent(directCdnUrl)}&stream=1&inline=1&filename=${encodeURIComponent(safeName)}`
-        : '';
-
       return {
         name: file.server_filename || 'video.mp4',
         size: file.size ? formatBytes(Number(file.size)) : 'Unknown',
         thumbnail: file.thumbs?.url3 || file.thumbs?.url1 || '',
         dlink: directCdnUrl,
         download_url: directCdnUrl,
-        stream_url: inlineStreamUrl,
+        stream_url: isVideo ? directCdnUrl : '',
         status: !directCdnUrl ? 'unavailable' : 'ok',
         debug_sign: sign,
         debug_timestamp: timestamp,
