@@ -4,23 +4,38 @@ import { youtube, igdl, ttdl, fbdown } from 'btch-downloader';
 import { recordPageView, connectToDatabase, ApiSubscription, SystemConfig, LinkCache, User } from '../db.js';
 import { verifySessionToken } from './auth/me.js';
 import crypto from 'node:crypto';
-import { ProxyAgent, setGlobalDispatcher } from 'undici';
+import { ProxyAgent, getGlobalDispatcher, setGlobalDispatcher } from 'undici';
 
 let _globalProxyConfigured = false;
 export function setupWebshareProxy() {
   const proxyUrl = process.env.PROXY_URL;
   if (proxyUrl && !_globalProxyConfigured) {
     try {
-      const agent = new ProxyAgent({
+      const defaultDispatcher = getGlobalDispatcher();
+      const proxyAgent = new ProxyAgent({
         uri: proxyUrl,
         requestTls: { rejectUnauthorized: false }
       });
-      setGlobalDispatcher(agent);
+
+      const tbDomains = ['1024tera','1024terabox','terasharefile','terashare','terasharelink','nephobox','teraboxapp','tibbox','tibibox','freeterabox','teraboxlink','mirrobox','4funbox','terabox.fun','momerybox','terabox.app','terabox.ap','dubox','terabox.best','teraboxshare','terafileshare','1024box','terabox'];
+
+      const scopedDispatcher = {
+        dispatch(opts, handler) {
+          const host = (opts.origin ? String(opts.origin) : (opts.headers && opts.headers.host) || '').toLowerCase();
+          const isTeraBox = tbDomains.some(d => host.includes(d));
+          if (isTeraBox) {
+            return proxyAgent.dispatch(opts, handler);
+          }
+          return defaultDispatcher.dispatch(opts, handler);
+        }
+      };
+
+      setGlobalDispatcher(scopedDispatcher);
       _globalProxyConfigured = true;
       const masked = proxyUrl.replace(/:[^:@]+@/, ':****@');
-      console.log(`[Webshare Proxy] 🌐 Global Undici ProxyAgent attached to outbound requests: ${masked}`);
+      console.log(`[Webshare Proxy] 🌐 Scoped ProxyAgent attached ONLY to TeraBox domains: ${masked}`);
     } catch (err) {
-      console.error('[Webshare Proxy] Failed to attach ProxyAgent dispatcher:', err.message);
+      console.error('[Webshare Proxy] Failed to attach scoped ProxyAgent dispatcher:', err.message);
     }
   }
 }
