@@ -1773,24 +1773,43 @@ export default async function handler(req, res) {
           const sessionCookie = ndusToken ? buildCookie(ndusToken, browserId) : `browserid=${browserId}`;
           const streamApiUrl = `${anonApp.params.whost}/share/streaming?app_id=250528&web=1&channel=dubian-wap&clienttype=0&uk=${listData.uk}&shareid=${shareId}&sign=${effectiveSign}&timestamp=${effectiveTimestamp}&fid=${file.fs_id}&type=M3U8_AUTO_720`;
 
-          const m3u8Res = await fetch(streamApiUrl, {
-            headers: {
-              'User-Agent': TB_UA,
-              'Referer': `${anonApp.params.whost}/`,
-              'Cookie': sessionCookie
-            }
-          });
+          const { request: uRequest } = await import('undici');
+          const proxyDispatcher = getNextProxyAgent();
 
-          if (m3u8Res.ok) {
-            const m3u8Text = await m3u8Res.text();
-            if (m3u8Text && m3u8Text.includes('#EXTM3U8')) {
+          let m3u8Res;
+          try {
+            m3u8Res = await uRequest(streamApiUrl, {
+              method: 'GET',
+              headers: {
+                'User-Agent': TB_UA,
+                'Referer': `${anonApp.params.whost}/`,
+                'Cookie': sessionCookie
+              },
+              dispatcher: proxyDispatcher || undefined,
+              signal: AbortSignal.timeout(5000)
+            });
+          } catch (pErr) {
+            m3u8Res = await uRequest(streamApiUrl, {
+              method: 'GET',
+              headers: {
+                'User-Agent': TB_UA,
+                'Referer': `${anonApp.params.whost}/`,
+                'Cookie': sessionCookie
+              },
+              signal: AbortSignal.timeout(5000)
+            });
+          }
+
+          if (m3u8Res && m3u8Res.statusCode === 200) {
+            const m3u8Text = await m3u8Res.body.text();
+            if (m3u8Text && (m3u8Text.includes('#EXTM3U8') || m3u8Text.includes('#EXTM3U'))) {
               m3u8StreamUrl = `data:application/x-mpegURL;base64,${Buffer.from(m3u8Text).toString('base64')}`;
               console.log(`[Parse] TeraBox Native M3U8 HLS stream resolved successfully (${m3u8Text.length} bytes)`);
             } else {
               console.log('[Parse] TeraBox /share/streaming returned non-M3U8 text:', m3u8Text.substring(0, 100));
             }
           } else {
-            console.log(`[Parse] TeraBox /share/streaming HTTP status: ${m3u8Res.status}`);
+            console.log(`[Parse] TeraBox /share/streaming HTTP status: ${m3u8Res ? m3u8Res.statusCode : 'none'}`);
           }
         } catch (m3u8Err) {
           console.warn('[Parse] TeraBox M3U8 HLS resolution failed, falling back to direct CDN:', m3u8Err.message);
