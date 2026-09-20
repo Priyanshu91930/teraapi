@@ -1753,14 +1753,16 @@ export default async function handler(req, res) {
         }
       }
 
+      const finalDlink = dlink || streamUrl || '';
       return {
         name: file.server_filename || 'video.mp4',
         size: file.size ? formatBytes(Number(file.size)) : 'Unknown',
         thumbnail: file.thumbs?.url3 || file.thumbs?.url1 || '',
-        dlink: dlink,
-        stream_url: isVideo ? streamUrl : '',
+        dlink: finalDlink,
+        download_url: finalDlink,
+        stream_url: isVideo ? (streamUrl || finalDlink) : '',
         // Mark file as unavailable if both download and stream failed
-        status: (!dlink && (!streamUrl || streamUrl.startsWith('ERROR:'))) ? 'unavailable' : 'ok',
+        status: (!finalDlink && (!streamUrl || streamUrl.startsWith('ERROR:'))) ? 'unavailable' : 'ok',
         debug_sign: sign,
         debug_timestamp: timestamp,
         debug_stream_endpoint: debugStreamEndpoint,
