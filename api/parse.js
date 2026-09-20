@@ -1804,7 +1804,13 @@ export default async function handler(req, res) {
             const m3u8Text = await m3u8Res.body.text();
             if (m3u8Text && (m3u8Text.includes('#EXTM3U8') || m3u8Text.includes('#EXTM3U'))) {
               m3u8StreamUrl = `data:application/x-mpegURL;base64,${Buffer.from(m3u8Text).toString('base64')}`;
+              const firstSegmentMatch = m3u8Text.match(/https?:\/\/[^\s\n\r]+/i);
+              const sampleSegment = firstSegmentMatch ? firstSegmentMatch[0] : '';
               console.log(`[Parse] TeraBox Native M3U8 HLS stream resolved successfully (${m3u8Text.length} bytes)`);
+              console.log(`[Parse] M3U8 Endpoint URL: ${streamApiUrl}`);
+              if (sampleSegment) {
+                console.log(`[Parse] Sample CDN Segment URL: ${sampleSegment.substring(0, 100)}...`);
+              }
             } else {
               console.log('[Parse] TeraBox /share/streaming returned non-M3U8 text:', m3u8Text.substring(0, 100));
             }
