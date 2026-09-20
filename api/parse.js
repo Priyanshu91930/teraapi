@@ -1753,21 +1753,15 @@ export default async function handler(req, res) {
       // CAPTCHA verification required block removed to prevent loops in India
 
       // Direct 0-bandwidth streaming & download configuration
-      // dlink: raw direct TeraBox CDN URL for 0-Vercel direct downloads
-      // stream_url: inline proxy URL that converts Content-Disposition from 'attachment' to 'inline' so ExoPlayer streams instantly
+      // Returns raw TeraBox CDN link directly to ensure 0 Vercel bandwidth and 0 Webshare proxy bandwidth
       const directCdnUrl = dlink || '';
-      const safeName = file.server_filename || 'video.mp4';
-      const inlineStreamUrl = (isVideo && directCdnUrl)
-        ? `${currentBaseUrl}/download.php?url=${encodeURIComponent(directCdnUrl)}&stream=1&inline=1&filename=${encodeURIComponent(safeName)}`
-        : '';
-
       return {
         name: file.server_filename || 'video.mp4',
         size: file.size ? formatBytes(Number(file.size)) : 'Unknown',
         thumbnail: file.thumbs?.url3 || file.thumbs?.url1 || '',
         dlink: directCdnUrl,
         download_url: directCdnUrl,
-        stream_url: inlineStreamUrl,
+        stream_url: isVideo ? directCdnUrl : '',
         status: !directCdnUrl ? 'unavailable' : 'ok',
         debug_sign: sign,
         debug_timestamp: timestamp,
