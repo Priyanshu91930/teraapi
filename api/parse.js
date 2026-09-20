@@ -1749,30 +1749,17 @@ export default async function handler(req, res) {
 
       // CAPTCHA verification required block removed to prevent loops in India
 
-      // Construct signed M3U8 streaming URL proxied via /download.php endpoint
-      if (isVideo && sign && timestamp && listData.uk && file.fs_id) {
-        try {
-          const shareId = listData.share_id || listData.shareid || '';
-          const rawStreamingUrl = `${anonApp.params.whost}/share/streaming?app_id=250528&web=1&channel=dubian-wap&clienttype=0&path=${encodeURIComponent(file.path || '')}&fid=${file.fs_id}&uk=${listData.uk}&shareid=${shareId}&sign=${sign}&timestamp=${timestamp}&type=M3U8_AUTO_720`;
-          const b64Stream = Buffer.from(rawStreamingUrl).toString('base64');
-          const sessionCookie = ndusToken ? buildCookie(ndusToken, browserId) : `browserid=${browserId}`;
-          streamUrl = `${currentBaseUrl}/download.php?url=${encodeURIComponent(b64Stream)}&b64=1&stream=1&type=stream&cookie=${encodeURIComponent(sessionCookie)}`;
-      // Use direct TeraBox CDN link for streaming to eliminate 100% of Vercel and Webshare streaming bandwidth
+      // Direct 0-bandwidth streaming & download configuration
+      // Returns raw TeraBox CDN link directly to avoid Vercel and Webshare proxy bandwidth usage
       const directCdnUrl = dlink || '';
-      if (isVideo && !streamUrl) {
-        streamUrl = directCdnUrl;
-      }
-
-      const finalDlink = directCdnUrl || streamUrl || '';
       return {
         name: file.server_filename || 'video.mp4',
         size: file.size ? formatBytes(Number(file.size)) : 'Unknown',
         thumbnail: file.thumbs?.url3 || file.thumbs?.url1 || '',
-        dlink: finalDlink,
-        download_url: finalDlink,
-        stream_url: isVideo ? (directCdnUrl || streamUrl) : '',
-        // Mark file as unavailable if both download and stream failed
-        status: (!finalDlink && (!streamUrl || streamUrl.startsWith('ERROR:'))) ? 'unavailable' : 'ok',
+        dlink: directCdnUrl,
+        download_url: directCdnUrl,
+        stream_url: isVideo ? directCdnUrl : '',
+        status: !directCdnUrl ? 'unavailable' : 'ok',
         debug_sign: sign,
         debug_timestamp: timestamp,
         debug_stream_endpoint: debugStreamEndpoint,
