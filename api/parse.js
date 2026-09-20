@@ -1729,14 +1729,8 @@ export default async function handler(req, res) {
           'Cookie': sessionCookie
         });
 
-        // Proxy direct TeraBox CDN link through download proxy to inject session cookies and preserve AWS static IP
-        // This prevents TeraBox "31362 sign error" when opened in external browsers/video players without cookies
-        if (dlink && !dlink.includes('/download') && !dlink.includes('download.php')) {
-          const b64Dl = Buffer.from(dlink).toString('base64');
-          const safeName = file.server_filename || 'video.mp4';
-          const sessionCookie = ndusToken ? buildCookie(ndusToken, browserId) : `browserid=${browserId}`;
-          dlink = `${currentBaseUrl}/download.php?url=${encodeURIComponent(b64Dl)}&b64=1&download=1&type=download&filename=${encodeURIComponent(safeName)}&cookie=${encodeURIComponent(sessionCookie)}`;
-        }
+        // Keep direct TeraBox CDN download link (d8.freeterabox.com) for 0-bandwidth direct downloads
+        console.log(`[Parse] Direct TeraBox CDN dlink resolved: ${dlink.substring(0, 80)}...`);
       }
 
       // Failsafe Fallback: If direct dlink recovery failed (due to 400141 / 400310 rate limits), construct proxied download URL via /download.php endpoint
