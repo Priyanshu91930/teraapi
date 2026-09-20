@@ -1754,13 +1754,24 @@ export default async function handler(req, res) {
 
       // CAPTCHA verification required block removed to prevent loops in India
 
+      // Extract effective sign and timestamp from file.dlink or listData for reliable M3U8 resolution
+      let effectiveSign = sign || listData.sign || '';
+      let effectiveTimestamp = timestamp || listData.timestamp || listData.server_time || '';
+      const rawFileDlink = file.dlink || '';
+      if (rawFileDlink) {
+        const signMatch = rawFileDlink.match(/[?&]sign=([^&]+)/);
+        if (signMatch && !effectiveSign) effectiveSign = decodeURIComponent(signMatch[1]);
+        const tsMatch = rawFileDlink.match(/[?&](?:dstime|timestamp)=([^&]+)/);
+        if (tsMatch && !effectiveTimestamp) effectiveTimestamp = decodeURIComponent(tsMatch[1]);
+      }
+
       // Resolve TeraBox Native M3U8 HLS streaming playlist for 0-bandwidth instant video streaming
       let m3u8StreamUrl = '';
-      if (isVideo && sign && timestamp && (listData.share_id || listData.shareid) && listData.uk && file.fs_id) {
+      if (isVideo && effectiveSign && effectiveTimestamp && (listData.share_id || listData.shareid) && listData.uk && file.fs_id) {
         try {
           const shareId = String(listData.share_id || listData.shareid || '');
           const sessionCookie = ndusToken ? buildCookie(ndusToken, browserId) : `browserid=${browserId}`;
-          const streamApiUrl = `${anonApp.params.whost}/share/streaming?app_id=250528&web=1&channel=dubian-wap&clienttype=0&uk=${listData.uk}&shareid=${shareId}&sign=${sign}&timestamp=${timestamp}&fid=${file.fs_id}&type=M3U8_AUTO_720`;
+          const streamApiUrl = `${anonApp.params.whost}/share/streaming?app_id=250528&web=1&channel=dubian-wap&clienttype=0&uk=${listData.uk}&shareid=${shareId}&sign=${effectiveSign}&timestamp=${effectiveTimestamp}&fid=${file.fs_id}&type=M3U8_AUTO_720`;
 
           const m3u8Res = await fetch(streamApiUrl, {
             headers: {
@@ -1775,7 +1786,11 @@ export default async function handler(req, res) {
             if (m3u8Text && m3u8Text.includes('#EXTM3U8')) {
               m3u8StreamUrl = `data:application/x-mpegURL;base64,${Buffer.from(m3u8Text).toString('base64')}`;
               console.log(`[Parse] TeraBox Native M3U8 HLS stream resolved successfully (${m3u8Text.length} bytes)`);
+            } else {
+              console.log('[Parse] TeraBox /share/streaming returned non-M3U8 text:', m3u8Text.substring(0, 100));
             }
+          } else {
+            console.log(`[Parse] TeraBox /share/streaming HTTP status: ${m3u8Res.status}`);
           }
         } catch (m3u8Err) {
           console.warn('[Parse] TeraBox M3U8 HLS resolution failed, falling back to direct CDN:', m3u8Err.message);
