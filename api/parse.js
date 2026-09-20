@@ -1234,11 +1234,13 @@ export default async function handler(req, res) {
         const cacheAgeMs = cachedRecord.createdAt ? (Date.now() - new Date(cachedRecord.createdAt).getTime()) : 99999999;
         const cachedList = cachedRecord.response && cachedRecord.response.list ? cachedRecord.response.list : [];
         const shouldPurgeCache = cachedList.some(item => {
-          // Purge if dlink is missing, has error, or contains legacy download.php proxy URL
+          // Purge if dlink is missing, has error, contains legacy download.php proxy URL, or missing native M3U8 data URI
+          const isVid = item.name && /\.(mp4|webm|ogg|mkv|mov|avi|ts|wmv|3gp|flv)$/i.test(item.name);
           return !item.dlink || 
                  item.dlink.startsWith('ERROR') || 
                  (item.stream_url && item.stream_url.includes('download.php')) ||
-                 (item.dlink && item.dlink.includes('download.php'));
+                 (item.dlink && item.dlink.includes('download.php')) ||
+                 (isVid && item.stream_url && !item.stream_url.startsWith('data:'));
         });
 
         if (shouldPurgeCache) {
@@ -1752,8 +1754,37 @@ export default async function handler(req, res) {
 
       // CAPTCHA verification required block removed to prevent loops in India
 
+      // Resolve TeraBox Native M3U8 HLS streaming playlist for 0-bandwidth instant video streaming
+      let m3u8StreamUrl = '';
+      if (isVideo && sign && timestamp && (listData.share_id || listData.shareid) && listData.uk && file.fs_id) {
+        try {
+          const shareId = String(listData.share_id || listData.shareid || '');
+          const sessionCookie = ndusToken ? buildCookie(ndusToken, browserId) : `browserid=${browserId}`;
+          const streamApiUrl = `${anonApp.params.whost}/share/streaming?app_id=250528&web=1&channel=dubian-wap&clienttype=0&uk=${listData.uk}&shareid=${shareId}&sign=${sign}&timestamp=${timestamp}&fid=${file.fs_id}&type=M3U8_AUTO_720`;
+
+          const m3u8Res = await fetch(streamApiUrl, {
+            headers: {
+              'User-Agent': TB_UA,
+              'Referer': `${anonApp.params.whost}/`,
+              'Cookie': sessionCookie
+            }
+          });
+
+          if (m3u8Res.ok) {
+            const m3u8Text = await m3u8Res.text();
+            if (m3u8Text && m3u8Text.includes('#EXTM3U8')) {
+              m3u8StreamUrl = `data:application/x-mpegURL;base64,${Buffer.from(m3u8Text).toString('base64')}`;
+              console.log(`[Parse] TeraBox Native M3U8 HLS stream resolved successfully (${m3u8Text.length} bytes)`);
+            }
+          }
+        } catch (m3u8Err) {
+          console.warn('[Parse] TeraBox M3U8 HLS resolution failed, falling back to direct CDN:', m3u8Err.message);
+        }
+      }
+
       // Direct 0-bandwidth streaming & download configuration
-      // Returns raw TeraBox CDN link directly to ensure 0 Vercel bandwidth and 0 Webshare proxy bandwidth
+      // dlink: raw direct TeraBox CDN link for 0-bandwidth high-speed direct file downloads
+      // stream_url: TeraBox Native M3U8 HLS data URI for instant 0-bandwidth video streaming
       const directCdnUrl = dlink || '';
       return {
         name: file.server_filename || 'video.mp4',
@@ -1761,7 +1792,7 @@ export default async function handler(req, res) {
         thumbnail: file.thumbs?.url3 || file.thumbs?.url1 || '',
         dlink: directCdnUrl,
         download_url: directCdnUrl,
-        stream_url: isVideo ? directCdnUrl : '',
+        stream_url: (isVideo ? (m3u8StreamUrl || directCdnUrl) : ''),
         status: !directCdnUrl ? 'unavailable' : 'ok',
         debug_sign: sign,
         debug_timestamp: timestamp,
