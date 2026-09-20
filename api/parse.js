@@ -756,7 +756,7 @@ export async function refreshNdusToken(whost, targetAccountIndex = undefined) {
 async function resolveCdnUrl(dlink, headers) {
   try {
     const response = await fetch(dlink, {
-      method: 'GET',
+      method: 'HEAD',
       headers,
       redirect: 'manual', // Don't auto-follow, we want the Location header
     });
