@@ -11,7 +11,10 @@ export function setupWebshareProxy() {
   const proxyUrl = process.env.PROXY_URL;
   if (proxyUrl && !_globalProxyConfigured) {
     try {
-      const agent = new ProxyAgent(proxyUrl);
+      const agent = new ProxyAgent({
+        uri: proxyUrl,
+        requestTls: { rejectUnauthorized: false }
+      });
       setGlobalDispatcher(agent);
       _globalProxyConfigured = true;
       const masked = proxyUrl.replace(/:[^:@]+@/, ':****@');
