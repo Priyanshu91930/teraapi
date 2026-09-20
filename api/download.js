@@ -100,17 +100,42 @@ export default async function handler(req, res) {
     return res.status(upstream.status).json({ error: `Upstream returned HTTP ${upstream.status}` });
   }
 
+  // Auto-resolve JSON API response from TeraBox /share/streaming or /share/download endpoints
+  const contentTypeRaw = upstream.headers.get('content-type') || '';
+  if (contentTypeRaw.includes('application/json') || decodedUrl.includes('/share/streaming') || decodedUrl.includes('/share/download')) {
+    try {
+      const jsonText = await upstream.text();
+      const jsonData = JSON.parse(jsonText);
+      const realCdnUrl = jsonData.dlink || (jsonData.urls && jsonData.urls[0] && (jsonData.urls[0].url || jsonData.urls[0].dlink)) || jsonData.stream_url;
+      if (realCdnUrl) {
+        console.log(`[Vercel Download Proxy] Resolved real CDN target from JSON: ${realCdnUrl.substring(0, 80)}...`);
+        upstream = await fetch(realCdnUrl, { headers, redirect: 'follow' });
+      }
+    } catch (jsonErr) {
+      console.warn('[Vercel Download Proxy] Response was not valid JSON, proceeding with stream pipe');
+    }
+  }
+
+  const isStreamMode = req.query.stream === '1' || req.query.type === 'stream' || req.query.type === 'm3u8' || req.query.inline === '1';
+
+  let finalContentType = upstream.headers.get('content-type') || 'video/mp4';
+  if (isStreamMode && (finalContentType.includes('octet-stream') || finalContentType.includes('application/json'))) {
+    finalContentType = 'video/mp4';
+  }
+
   const copyHeader = (name, value) => {
     if (value) res.setHeader(name, value);
   };
-  copyHeader('Content-Type', upstream.headers.get('content-type'));
+  res.setHeader('Content-Type', finalContentType);
   copyHeader('Content-Length', upstream.headers.get('content-length'));
   copyHeader('Content-Range', upstream.headers.get('content-range'));
   copyHeader('Accept-Ranges', upstream.headers.get('accept-ranges'));
 
-  if (filename) {
+  if (filename && !isStreamMode) {
     const safe = String(filename).replace(/[^\w\-. ]/g, '_');
     res.setHeader('Content-Disposition', `attachment; filename="${safe}"`);
+  } else if (isStreamMode) {
+    res.setHeader('Content-Disposition', 'inline');
   }
 
   res.status(upstream.status);
