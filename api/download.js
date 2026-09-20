@@ -75,6 +75,23 @@ export default async function handler(req, res) {
   const range = req.headers['range'];
   if (range) headers['Range'] = range;
 
+  // Pre-resolve JSON API target if decodedUrl is a TeraBox /share/streaming or /share/download endpoint
+  if (decodedUrl.includes('/share/streaming') || decodedUrl.includes('/share/download')) {
+    try {
+      const jsonRes = await fetch(decodedUrl, { headers, redirect: 'follow' });
+      if (jsonRes.ok) {
+        const jsonData = await jsonRes.json();
+        const realCdnUrl = jsonData.dlink || (jsonData.urls && jsonData.urls[0] && (jsonData.urls[0].url || jsonData.urls[0].dlink)) || jsonData.stream_url;
+        if (realCdnUrl) {
+          console.log(`[Vercel Download Proxy] Resolved real CDN target from JSON: ${realCdnUrl.substring(0, 80)}...`);
+          decodedUrl = realCdnUrl;
+        }
+      }
+    } catch (jsonErr) {
+      console.warn('[Vercel Download Proxy] Failed to pre-resolve JSON target:', jsonErr.message);
+    }
+  }
+
   let upstream;
   try {
     // Perform manual redirect handling to prevent fetch from stripping cross-domain Cookie headers
@@ -98,22 +115,6 @@ export default async function handler(req, res) {
 
   if (!upstream.ok && upstream.status !== 206) {
     return res.status(upstream.status).json({ error: `Upstream returned HTTP ${upstream.status}` });
-  }
-
-  // Auto-resolve JSON API response from TeraBox /share/streaming or /share/download endpoints
-  const contentTypeRaw = upstream.headers.get('content-type') || '';
-  if (contentTypeRaw.includes('application/json') || decodedUrl.includes('/share/streaming') || decodedUrl.includes('/share/download')) {
-    try {
-      const jsonText = await upstream.text();
-      const jsonData = JSON.parse(jsonText);
-      const realCdnUrl = jsonData.dlink || (jsonData.urls && jsonData.urls[0] && (jsonData.urls[0].url || jsonData.urls[0].dlink)) || jsonData.stream_url;
-      if (realCdnUrl) {
-        console.log(`[Vercel Download Proxy] Resolved real CDN target from JSON: ${realCdnUrl.substring(0, 80)}...`);
-        upstream = await fetch(realCdnUrl, { headers, redirect: 'follow' });
-      }
-    } catch (jsonErr) {
-      console.warn('[Vercel Download Proxy] Response was not valid JSON, proceeding with stream pipe');
-    }
   }
 
   const isStreamMode = req.query.stream === '1' || req.query.type === 'stream' || req.query.type === 'm3u8' || req.query.inline === '1';
