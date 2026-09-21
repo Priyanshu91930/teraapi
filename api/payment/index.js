@@ -11,12 +11,13 @@ export default async function handler(req, res) {
   }
 
   const url = req.url || '';
+  const body = req.body || {};
 
-  if (url.includes('verify-play-purchase')) {
+  if (url.includes('verify-play-purchase') || body.purchaseToken || req.query?.action === 'verify') {
     return verifyPlayPurchaseHandler(req, res);
   }
 
-  if (url.includes('create-order')) {
+  if (url.includes('create-order') || body.plan || req.query?.action === 'create-order') {
     return createOrderHandler(req, res);
   }
 
