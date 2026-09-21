@@ -32,6 +32,7 @@ import parseHandler from './api/parse.js';
 import authHandler from './api/auth/index.js';
 import webhookHandler from './api/webhook.js';
 import createOrderHandler from './api/payment/create-order.js';
+import verifyPlayPurchaseHandler from './api/payment/verify-play-purchase.js';
 import historyHandler from './api/history.js';
 
 const app = express();
@@ -48,6 +49,8 @@ app.all('/auth/*', (req, res) => authHandler(req, res));
 app.all('/api/webhook', (req, res) => webhookHandler(req, res));
 app.all('/api/payment/create-order', (req, res) => createOrderHandler(req, res));
 app.all('/payment/create-order', (req, res) => createOrderHandler(req, res));
+app.all('/api/payment/verify-play-purchase', (req, res) => verifyPlayPurchaseHandler(req, res));
+app.all('/payment/verify-play-purchase', (req, res) => verifyPlayPurchaseHandler(req, res));
 app.all('/api/history', (req, res) => historyHandler(req, res));
 app.all('/api/history/*', (req, res) => historyHandler(req, res));
 
