@@ -27,42 +27,18 @@
       "use": "@vercel/node"
     },
     {
-      "src": "api/auth/register.js",
-      "use": "@vercel/node"
-    },
-    {
-      "src": "api/config.js",
-      "use": "@vercel/node"
-    },
-    {
-      "src": "api/refresh.js",
-      "use": "@vercel/node"
-    },
-    {
-      "src": "api/auth/login.js",
-      "use": "@vercel/node"
-    },
-    {
       "src": "api/auth/index.js",
       "use": "@vercel/node"
     },
     {
-      "src": "api/payment/verify-play-purchase.js",
-      "use": "@vercel/node"
-    },
-    {
-      "src": "api/payment/create-order.js",
-      "use": "@vercel/node"
-    },
-    {
-      "src": "api/dlink.js",
+      "src": "api/payment/index.js",
       "use": "@vercel/node"
     }
   ],
   "routes": [
     {
-      "src": "/api/payment/verify-play-purchase",
-      "dest": "/api/payment/verify-play-purchase.js",
+      "src": "/api/payment/(.*)",
+      "dest": "/api/payment/index.js",
       "headers": {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -70,8 +46,8 @@
       }
     },
     {
-      "src": "/api/payment/create-order",
-      "dest": "/api/payment/create-order.js",
+      "src": "/payment/(.*)",
+      "dest": "/api/payment/index.js",
       "headers": {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -103,15 +79,6 @@
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, x-api-key, x-client-type, x-client-source, Authorization"
-      }
-    },
-    {
-      "src": "/dlink",
-      "dest": "/api/dlink.js",
-      "headers": {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, x-api-key"
       }
     },
     {
@@ -164,42 +131,6 @@
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, x-razorpay-signature"
-      }
-    },
-    {
-      "src": "/config",
-      "dest": "/api/config.js",
-      "headers": {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, x-api-key"
-      }
-    },
-    {
-      "src": "/refresh",
-      "dest": "/api/refresh.js",
-      "headers": {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, x-api-key"
-      }
-    },
-    {
-      "src": "/auth/register",
-      "dest": "/api/auth/register.js",
-      "headers": {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type"
-      }
-    },
-    {
-      "src": "/auth/login",
-      "dest": "/api/auth/login.js",
-      "headers": {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type"
       }
     }
   ]
