@@ -47,11 +47,37 @@
       "use": "@vercel/node"
     },
     {
+      "src": "api/payment/verify-play-purchase.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "api/payment/create-order.js",
+      "use": "@vercel/node"
+    },
+    {
       "src": "api/dlink.js",
       "use": "@vercel/node"
     }
   ],
   "routes": [
+    {
+      "src": "/api/payment/verify-play-purchase",
+      "dest": "/api/payment/verify-play-purchase.js",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, x-api-key"
+      }
+    },
+    {
+      "src": "/api/payment/create-order",
+      "dest": "/api/payment/create-order.js",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, x-api-key"
+      }
+    },
     {
       "src": "/api/auth/(.*)",
       "dest": "/api/auth/index.js",
