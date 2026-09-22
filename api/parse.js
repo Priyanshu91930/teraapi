@@ -1825,7 +1825,8 @@ export default async function handler(req, res) {
       if (isVideo && directCdnUrl && directCdnUrl.startsWith('http') && !directCdnUrl.includes('teraboxdownloader.co.in/download.php')) {
         const safeName = file.server_filename || 'video.mp4';
         const sessionCookie = ndusToken ? buildCookie(ndusToken, browserId) : `browserid=${browserId}`;
-        fallbackStreamUrl = `https://teraboxdownloader.co.in/download.php?url=${encodeURIComponent(directCdnUrl)}&filename=${encodeURIComponent(safeName)}&cookie=${encodeURIComponent(sessionCookie)}&stream=1`;
+        const b64CdnUrl = Buffer.from(directCdnUrl).toString('base64');
+        fallbackStreamUrl = `https://teraboxdownloader.co.in/download.php?url=${encodeURIComponent(b64CdnUrl)}&b64=1&filename=${encodeURIComponent(safeName)}&cookie=${encodeURIComponent(sessionCookie)}&stream=1`;
       }
 
       const finalStreamUrl = isVideo ? (m3u8StreamUrl || fallbackStreamUrl) : '';
