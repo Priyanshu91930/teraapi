@@ -33,6 +33,14 @@
     {
       "src": "api/payment/index.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "api/history.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "api/dlink.js",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
@@ -131,6 +139,42 @@
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, x-razorpay-signature"
+      }
+    },
+    {
+      "src": "/api/history",
+      "dest": "/api/history.js",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, x-api-key"
+      }
+    },
+    {
+      "src": "/history",
+      "dest": "/api/history.js",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, x-api-key"
+      }
+    },
+    {
+      "src": "/api/dlink",
+      "dest": "/api/dlink.js",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, x-api-key"
+      }
+    },
+    {
+      "src": "/dlink",
+      "dest": "/api/dlink.js",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, x-api-key"
       }
     }
   ]
