@@ -230,6 +230,8 @@ export default async function handler(req, res) {
                 if (updated) await user.save();
             }
 
+            console.log(`[Auth Sync] User logged in successfully: ${cleanEmail} (Plan: ${user.plan || 'free'}, Status: ${user.premiumStatus || 'free'})`);
+
             const sessionToken = generateSessionToken(user.email, user.role);
             const isPremiumUser = user.premiumStatus === 'premium' || (user.plan && user.plan !== 'free') || user.role === 'admin';
             const isExpired = user.premiumExpiresAt && new Date(user.premiumExpiresAt) < new Date();
