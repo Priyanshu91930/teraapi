@@ -1234,17 +1234,12 @@ export default async function handler(req, res) {
         const cacheAgeMs = cachedRecord.createdAt ? (Date.now() - new Date(cachedRecord.createdAt).getTime()) : 99999999;
         const cachedList = cachedRecord.response && cachedRecord.response.list ? cachedRecord.response.list : [];
         const shouldPurgeCache = cachedList.some(item => {
-          // Purge if dlink is missing, has error, contains legacy download.php proxy URL, or missing native M3U8 data URI
-          const isVid = item.name && /\.(mp4|webm|ogg|mkv|mov|avi|ts|wmv|3gp|flv)$/i.test(item.name);
-          return !item.dlink || 
-                 item.dlink.startsWith('ERROR') || 
-                 (item.stream_url && item.stream_url.includes('download.php')) ||
-                 (item.dlink && item.dlink.includes('download.php')) ||
-                 (isVid && item.stream_url && !item.stream_url.startsWith('data:'));
+          // Purge if dlink is missing or contains an error
+          return !item.dlink || item.dlink.startsWith('ERROR');
         });
 
         if (shouldPurgeCache) {
-          console.log(`[Cache Purge] Purging cached record with missing/legacy proxy dlink for surl: ${strippedShortUrl}`);
+          console.log(`[Cache Purge] Purging cached record with invalid dlink for surl: ${strippedShortUrl}`);
           await LinkCache.deleteOne({ shortUrl: strippedShortUrl });
         } else if (cacheAgeMs < 10 * 60 * 1000) {
           console.log(`[Cache Hit] Serving fresh cached response (${Math.round(cacheAgeMs/60000)}m old) for surl: ${strippedShortUrl}`);
@@ -1824,15 +1819,22 @@ export default async function handler(req, res) {
 
       // Direct 0-bandwidth streaming & download configuration
       // dlink: raw direct TeraBox CDN link for 0-bandwidth high-speed direct file downloads
-      // stream_url: TeraBox Native M3U8 HLS data URI for instant 0-bandwidth video streaming
+      // stream_url: TeraBox Native M3U8 HLS data URI if available, or Hostinger download.php 302 stream proxy fallback
       const directCdnUrl = dlink || '';
+      let fallbackStreamUrl = directCdnUrl;
+      if (isVideo && directCdnUrl && directCdnUrl.startsWith('http') && !directCdnUrl.includes('teraboxdownloader.co.in/download.php')) {
+        const safeName = file.server_filename || 'video.mp4';
+        const sessionCookie = ndusToken ? buildCookie(ndusToken, browserId) : `browserid=${browserId}`;
+        fallbackStreamUrl = `https://teraboxdownloader.co.in/download.php?url=${encodeURIComponent(directCdnUrl)}&filename=${encodeURIComponent(safeName)}&cookie=${encodeURIComponent(sessionCookie)}&stream=1`;
+      }
+
       return {
         name: file.server_filename || 'video.mp4',
         size: file.size ? formatBytes(Number(file.size)) : 'Unknown',
         thumbnail: file.thumbs?.url3 || file.thumbs?.url1 || '',
         dlink: directCdnUrl,
         download_url: directCdnUrl,
-        stream_url: (isVideo ? (m3u8StreamUrl || directCdnUrl) : ''),
+        stream_url: (isVideo ? (m3u8StreamUrl || fallbackStreamUrl) : ''),
         status: !directCdnUrl ? 'unavailable' : 'ok',
         debug_sign: sign,
         debug_timestamp: timestamp,
