@@ -1828,13 +1828,22 @@ export default async function handler(req, res) {
         fallbackStreamUrl = `https://teraboxdownloader.co.in/download.php?url=${encodeURIComponent(directCdnUrl)}&filename=${encodeURIComponent(safeName)}&cookie=${encodeURIComponent(sessionCookie)}&stream=1`;
       }
 
+      const finalStreamUrl = isVideo ? (m3u8StreamUrl || fallbackStreamUrl) : '';
+      if (isVideo) {
+        if (m3u8StreamUrl) {
+          console.log(`[Parse] 🎥 Stream Mode: Native M3U8 HLS Data URI Active`);
+        } else {
+          console.log(`[Parse] 🎥 Stream Mode: Hostinger Stream Proxy Fallback Active -> ${fallbackStreamUrl.substring(0, 100)}...`);
+        }
+      }
+
       return {
         name: file.server_filename || 'video.mp4',
         size: file.size ? formatBytes(Number(file.size)) : 'Unknown',
         thumbnail: file.thumbs?.url3 || file.thumbs?.url1 || '',
         dlink: directCdnUrl,
         download_url: directCdnUrl,
-        stream_url: (isVideo ? (m3u8StreamUrl || fallbackStreamUrl) : ''),
+        stream_url: finalStreamUrl,
         status: !directCdnUrl ? 'unavailable' : 'ok',
         debug_sign: sign,
         debug_timestamp: timestamp,
