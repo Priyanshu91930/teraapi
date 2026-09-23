@@ -22,8 +22,13 @@ export function setupWebshareProxy() {
       const scopedDispatcher = {
         dispatch(opts, handler) {
           const host = (opts.origin ? String(opts.origin) : (opts.headers && opts.headers.host) || '').toLowerCase();
+          
+          // Exclude CDN download/streaming subdomains (e.g. d8.freeterabox.com, d.terabox.app)
+          // CDN links use pre-signed tokens and don't need proxying, which saves bandwidth (KB instead of MB).
+          const isCdn = /(?:^|\/\/)(?:d\d*|cdn\d*|download\d*)\./i.test(host);
+
           const isTeraBox = tbDomains.some(d => host.includes(d));
-          if (isTeraBox) {
+          if (isTeraBox && !isCdn) {
             return proxyAgent.dispatch(opts, handler);
           }
           return defaultDispatcher.dispatch(opts, handler);
