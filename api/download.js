@@ -92,57 +92,9 @@ export default async function handler(req, res) {
     }
   }
 
-  let upstream;
-  try {
-    // Perform manual redirect handling to prevent fetch from stripping cross-domain Cookie headers
-    upstream = await fetch(decodedUrl, { headers, redirect: 'manual' });
-    if ([301, 302, 303, 307, 308].includes(upstream.status)) {
-      const location = upstream.headers.get('location');
-      if (location) {
-        console.log(`[Vercel Download Proxy] Following redirect to CDN with session cookie preserved: ${location.substring(0, 80)}...`);
-        upstream = await fetch(location, { headers, redirect: 'manual' });
-        if ([301, 302, 303, 307, 308].includes(upstream.status)) {
-          const secondLoc = upstream.headers.get('location');
-          if (secondLoc) {
-            upstream = await fetch(secondLoc, { headers, redirect: 'follow' });
-          }
-        }
-      }
-    }
-  } catch (e) {
-    return res.status(502).json({ error: 'Failed to reach upstream: ' + e.message });
-  }
-
-  if (!upstream.ok && upstream.status !== 206) {
-    return res.status(upstream.status).json({ error: `Upstream returned HTTP ${upstream.status}` });
-  }
-
-  const isStreamMode = req.query.stream === '1' || req.query.type === 'stream' || req.query.type === 'm3u8' || req.query.inline === '1';
-
-  let finalContentType = upstream.headers.get('content-type') || 'video/mp4';
-  if (isStreamMode && (finalContentType.includes('octet-stream') || finalContentType.includes('application/json'))) {
-    finalContentType = 'video/mp4';
-  }
-
-  const copyHeader = (name, value) => {
-    if (value) res.setHeader(name, value);
-  };
-  res.setHeader('Content-Type', finalContentType);
-  copyHeader('Content-Length', upstream.headers.get('content-length'));
-  copyHeader('Content-Range', upstream.headers.get('content-range'));
-  copyHeader('Accept-Ranges', upstream.headers.get('accept-ranges'));
-
-  if (filename && !isStreamMode) {
-    const safe = String(filename).replace(/[^\w\-. ]/g, '_');
-    res.setHeader('Content-Disposition', `attachment; filename="${safe}"`);
-  } else if (isStreamMode) {
-    res.setHeader('Content-Disposition', 'inline');
-  }
-
-  res.status(upstream.status);
-  if (upstream.body) {
-    Readable.fromWeb(upstream.body).pipe(res);
-    return;
-  }
-  return res.end();
+  // Eliminate Vercel Data Transfer Bandwidth:
+  // Instead of piping heavy video/file stream through Vercel serverless function (which consumes Vercel Bandwidth MBs),
+  // return a 302 redirect so client connects directly to CDN / Hostinger stream proxy!
+  console.log(`[Vercel Download Proxy] 🚀 Redirecting 302 directly to CDN target (0 Vercel Bandwidth): ${decodedUrl.substring(0, 80)}...`);
+  return res.redirect(302, decodedUrl);
 }
