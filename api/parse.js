@@ -1777,7 +1777,7 @@ export default async function handler(req, res) {
           const streamTypes = ['M3U8_AUTO_1080', 'M3U8_AUTO_720', 'M3U8_AUTO_480', 'M3U8_AUTO_360', 'M3U8_AUTO_210', 'M3U8_AUTO'];
 
           for (const sType of streamTypes) {
-            const streamApiUrl = `${anonApp.params.whost}/share/streaming?app_id=250528&web=1&channel=dubian-wap&clienttype=0&uk=${listData.uk}&shareid=${shareId}&sign=${effectiveSign}&timestamp=${effectiveTimestamp}&fid=${file.fs_id}&type=${sType}`;
+            const streamApiUrl = `${anonApp.params.whost}/share/streaming?app_id=250528&web=1&channel=dubian-wap&clienttype=0&is_vip=1&vip=1&uk=${listData.uk}&shareid=${shareId}&sign=${effectiveSign}&timestamp=${effectiveTimestamp}&fid=${file.fs_id}&type=${sType}`;
 
             let m3u8Res = null;
             try {
