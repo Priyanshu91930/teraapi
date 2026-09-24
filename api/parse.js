@@ -1824,22 +1824,16 @@ export default async function handler(req, res) {
 
       // Direct 0-bandwidth streaming & download configuration
       // dlink: raw direct TeraBox CDN link for 0-bandwidth high-speed direct file downloads
-      // stream_url: TeraBox Native M3U8 HLS data URI if available, or Hostinger download.php 302 stream proxy fallback
+      // stream_url: TeraBox Native M3U8 HLS data URI if available, or direct CDN URL for instant progressive playback
       const directCdnUrl = dlink || '';
-      let fallbackStreamUrl = directCdnUrl;
-      if (isVideo && directCdnUrl && directCdnUrl.startsWith('http') && !directCdnUrl.includes('teraboxdownloader.co.in/download.php')) {
-        const safeName = file.server_filename || 'video.mp4';
-        const sessionCookie = ndusToken ? buildCookie(ndusToken, browserId) : `browserid=${browserId}`;
-        const b64CdnUrl = Buffer.from(directCdnUrl).toString('base64');
-        fallbackStreamUrl = `https://teraboxdownloader.co.in/download.php?url=${encodeURIComponent(b64CdnUrl)}&b64=1&filename=${encodeURIComponent(safeName)}&cookie=${encodeURIComponent(sessionCookie)}&stream=1`;
-      }
+      const fallbackStreamUrl = directCdnUrl;
 
       const finalStreamUrl = isVideo ? (m3u8StreamUrl || fallbackStreamUrl) : '';
       if (isVideo) {
         if (m3u8StreamUrl) {
           console.log(`[Parse] 🎥 Stream Mode: Native M3U8 HLS Data URI Active`);
         } else {
-          console.log(`[Parse] 🎥 Stream Mode: Hostinger Stream Proxy Fallback Active -> ${fallbackStreamUrl.substring(0, 100)}...`);
+          console.log(`[Parse] 🎥 Stream Mode: Direct CDN Instant Stream Active -> ${fallbackStreamUrl.substring(0, 100)}...`);
         }
       }
 
