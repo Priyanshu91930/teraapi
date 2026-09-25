@@ -774,21 +774,44 @@ export async function refreshNdusToken(whost, targetAccountIndex = undefined) {
 
 // Follow TeraBox dlink redirect to get actual CDN URL (faster download)
 async function resolveCdnUrl(dlink, headers) {
+  if (!dlink || typeof dlink !== 'string') return dlink;
   try {
+    // Attempt 1: Fetch with GET and redirect: 'manual' (HEAD is blocked by TeraBox)
     const response = await fetch(dlink, {
-      method: 'HEAD',
+      method: 'GET',
       headers,
-      redirect: 'manual', // Don't auto-follow, we want the Location header
+      redirect: 'manual',
     });
+    
     // TeraBox returns 302 redirect to actual CDN URL
-    if (response.status === 302 || response.status === 301) {
+    if (response.status === 302 || response.status === 301 || response.status === 303 || response.status === 307) {
       const location = response.headers.get('location');
       if (location && location.startsWith('http')) {
-        console.log('[CDN] Resolved redirect:', location.substring(0, 80) + '...');
+        console.log('[CDN] Resolved redirect (GET):', location.substring(0, 80) + '...');
         return location;
       }
     }
-    // Already a direct URL or no redirect
+
+    // Attempt 2: Undici request fallback without auto-following redirects
+    try {
+      const { request: uRequest } = await import('undici');
+      const uRes = await uRequest(dlink, {
+        method: 'GET',
+        headers,
+        maxRedirections: 0,
+        signal: AbortSignal.timeout(4000),
+      });
+      if (uRes.statusCode === 302 || uRes.statusCode === 301 || uRes.statusCode === 303 || uRes.statusCode === 307) {
+        const uLoc = uRes.headers.location || uRes.headers['location'];
+        if (uLoc && typeof uLoc === 'string' && uLoc.startsWith('http')) {
+          console.log('[CDN] Resolved redirect (undici):', uLoc.substring(0, 80) + '...');
+          return uLoc;
+        }
+      }
+    } catch (uErr) {
+      // ignore
+    }
+
     return dlink;
   } catch (e) {
     console.log('[CDN] Redirect resolve failed, using original dlink:', e.message);
