@@ -1671,13 +1671,15 @@ export default async function handler(req, res) {
         };
       }
 
+      const targetFsId = file.fs_id || file.fsid;
+
       // Recover missing dlink via the signed /share/download endpoint
       // (share/list no longer returns dlink for many sessions)
       // Only execute this recovery step if we have a premium ndusToken (since anonymous calls trigger verify_v2 captcha loop)
       let dlink = file.dlink || '';
       let verifyV2Url = '';
 
-      if (!dlink && sign && timestamp && (listData.share_id || listData.shareid) && listData.uk && file.fs_id) {
+      if (!dlink && sign && timestamp && (listData.share_id || listData.shareid) && listData.uk && targetFsId) {
         if (ndusToken) {
           const sessionCookie = buildCookie(ndusToken, browserId);
           
@@ -1690,7 +1692,7 @@ export default async function handler(req, res) {
             clienttype: '0',
             shareid: String(listData.share_id || listData.shareid),
             uk: String(listData.uk),
-            fid_list: JSON.stringify([file.fs_id]),
+            fid_list: JSON.stringify([targetFsId]),
             sign: sign || '',
             timestamp: String(timestamp || ''),
             product: 'share',
@@ -1747,7 +1749,7 @@ export default async function handler(req, res) {
             dlink = await resolveDlinkViaShareDownload(
               anonApp.params.whost, sign, timestamp,
               listData.share_id || listData.shareid, listData.uk,
-              file.fs_id, `browserid=${browserId}`
+              targetFsId, `browserid=${browserId}`
             );
           } catch (anonErr) {
             console.log('[Parse] Anonymous dlink recovery error:', anonErr.message || anonErr);
@@ -1773,10 +1775,10 @@ export default async function handler(req, res) {
       }
 
       // Failsafe Fallback: If direct dlink recovery failed (due to 400141 / 400310 rate limits), construct proxied download URL via /download.php endpoint
-      if (!dlink && sign && timestamp && (listData.share_id || listData.shareid) && listData.uk && file.fs_id) {
+      if (!dlink && sign && timestamp && (listData.share_id || listData.shareid) && listData.uk && targetFsId) {
         try {
           const shareId = listData.share_id || listData.shareid || '';
-          const rawDownloadUrl = `${anonApp.params.whost}/share/download?app_id=250528&web=1&channel=dubian-wap&clienttype=0&fid_list=%5B${file.fs_id}%5D&uk=${listData.uk}&shareid=${shareId}&sign=${sign}&timestamp=${timestamp}&type=dlink`;
+          const rawDownloadUrl = `${anonApp.params.whost}/share/download?app_id=250528&web=1&channel=dubian-wap&clienttype=0&fid_list=%5B${targetFsId}%5D&uk=${listData.uk}&shareid=${shareId}&sign=${sign}&timestamp=${timestamp}&type=dlink`;
           const safeName = file.server_filename || 'video.mp4';
           const sessionCookie = ndusToken ? buildCookie(ndusToken, browserId) : `browserid=${browserId}`;
           dlink = `${currentBaseUrl}/download.php?url=${encodeURIComponent(rawDownloadUrl)}&filename=${encodeURIComponent(safeName)}&cookie=${encodeURIComponent(sessionCookie)}`;
@@ -1801,7 +1803,7 @@ export default async function handler(req, res) {
 
       // Resolve TeraBox Native M3U8 HLS streaming playlist for 0-bandwidth instant video streaming
       let m3u8StreamUrl = '';
-      if (isVideo && effectiveSign && effectiveTimestamp && (listData.share_id || listData.shareid) && listData.uk && file.fs_id) {
+      if (isVideo && effectiveSign && effectiveTimestamp && (listData.share_id || listData.shareid) && listData.uk && targetFsId) {
         try {
           const shareId = String(listData.share_id || listData.shareid || '');
           const sessionCookie = ndusToken ? buildCookie(ndusToken, browserId) : `browserid=${browserId}`;
@@ -1811,7 +1813,7 @@ export default async function handler(req, res) {
           const streamTypes = ['M3U8_AUTO_1080', 'M3U8_AUTO_720', 'M3U8_AUTO_480', 'M3U8_AUTO_360', 'M3U8_AUTO_210', 'M3U8_AUTO'];
 
           for (const sType of streamTypes) {
-            const streamApiUrl = `${anonApp.params.whost}/share/streaming?app_id=250528&web=1&channel=dubian-wap&clienttype=0&is_vip=1&vip=1&uk=${listData.uk}&shareid=${shareId}&sign=${effectiveSign}&timestamp=${effectiveTimestamp}&fid=${file.fs_id}&type=${sType}`;
+            const streamApiUrl = `${anonApp.params.whost}/share/streaming?app_id=250528&web=1&channel=dubian-wap&clienttype=0&is_vip=1&vip=1&uk=${listData.uk}&shareid=${shareId}&sign=${effectiveSign}&timestamp=${effectiveTimestamp}&fid=${targetFsId}&type=${sType}`;
 
             let m3u8Res = null;
             try {
