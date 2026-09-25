@@ -1261,13 +1261,13 @@ export default async function handler(req, res) {
       if (cachedRecord && cachedRecord.response) {
         const cacheAgeMs = cachedRecord.createdAt ? (Date.now() - new Date(cachedRecord.createdAt).getTime()) : 99999999;
         const cachedList = cachedRecord.response && cachedRecord.response.list ? cachedRecord.response.list : [];
-        const shouldPurgeCache = cachedList.some(item => {
-          // Purge if dlink is missing or contains an error
-          return !item.dlink || item.dlink.startsWith('ERROR');
+        const shouldPurgeCache = req.query.nocache === 'true' || req.query.refresh === '1' || cachedList.some(item => {
+          // Purge if dlink is missing, contains an error, or contains legacy download.php proxy fallback
+          return !item.dlink || item.dlink.startsWith('ERROR') || item.dlink.includes('download.php');
         });
 
         if (shouldPurgeCache) {
-          console.log(`[Cache Purge] Purging cached record with invalid dlink for surl: ${strippedShortUrl}`);
+          console.log(`[Cache Purge] Purging cached record with invalid/proxy dlink for surl: ${strippedShortUrl}`);
           await LinkCache.deleteOne({ shortUrl: strippedShortUrl });
         } else if (cacheAgeMs < 10 * 60 * 1000) {
           console.log(`[Cache Hit] Serving fresh cached response (${Math.round(cacheAgeMs/60000)}m old) for surl: ${strippedShortUrl}`);
