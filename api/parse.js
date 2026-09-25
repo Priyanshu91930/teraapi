@@ -1568,19 +1568,53 @@ export default async function handler(req, res) {
       console.error('[Parse] Failed to fetch shortUrlInfo metadata:', infoErr.message);
     }
 
-    // Block folder links and links with multiple files
+    // Handle folder links and links with multiple files
     if (listData && Array.isArray(listData.list)) {
       const topDirs = listData.list.filter(f => Number(f.isdir) === 1);
       const isMultipleFiles = listData.list.length > 1 || topDirs.length > 0;
 
       if (isMultipleFiles) {
-        console.log(`[Parse] Link contains a folder or multiple files (${listData.list.length} items, ${topDirs.length} dirs). Rejecting request without trial deduction.`);
-        return res.status(400).json({
-          success: false,
-          code: 'MULTIPLE_FILES_NOT_ALLOWED',
-          error: 'This link contains multiple files or a folder. Please provide a link with a single file.',
-          message: 'This link contains multiple files or a folder. Please provide a link with a single file.'
-        });
+        // Check if user is VIP / Premium
+        const isUserVip = (
+          req.headers['x-user-tier'] === 'premium' ||
+          req.headers['x-is-vip'] === 'true' ||
+          req.query.is_vip === 'true' ||
+          req.query.is_vip === '1' ||
+          req.query.user_tier === 'premium' ||
+          (entitlement && entitlement.isPremium && entitlement.userType !== 'free_trial' && entitlement.userType !== 'app_or_bot_user')
+        );
+
+        if (!isUserVip) {
+          console.log(`[Parse] Link contains a folder/multiple files (${listData.list.length} items, ${topDirs.length} dirs). Rejecting free user request.`);
+          return res.status(403).json({
+            success: false,
+            code: 'VIP_REQUIRED_FOR_FOLDERS',
+            error: 'Folders contain multiple files. Downloading full folders is exclusive to VIP members.',
+            message: 'Folders contain multiple files. Downloading full folders is exclusive to VIP members.'
+          });
+        }
+
+        console.log(`[Parse] 🌟 VIP User detected! Processing folder/multi-file link (${listData.list.length} top items, ${topDirs.length} sub-dirs)...`);
+
+        // If there are subdirectories, recursively expand them into individual files
+        if (topDirs.length > 0) {
+          const appToUse = premiumApp || new TeraBoxApp(`browserid=${browserId}`);
+          appToUse.params.ua = anonApp.params.ua;
+          appToUse.TERABOX_DOMAIN = anonApp.TERABOX_DOMAIN;
+          appToUse.params.whost = anonApp.params.whost;
+          appToUse.params.uhost = anonApp.params.uhost;
+
+          const topFiles = listData.list.filter(f => Number(f.isdir) !== 1);
+          const expandedFiles = await Promise.all(
+            topDirs.map(dir => fetchFolderFiles(appToUse, strippedShortUrl, dir.path, listData.share_id || listData.shareid, listData.uk, browserId, activeWorkingNdusToken))
+          );
+          const allFolderFiles = topFiles.concat(...expandedFiles);
+
+          if (allFolderFiles.length > 0) {
+            console.log(`[Parse] Successfully expanded folder into ${allFolderFiles.length} individual files.`);
+            listData.list = allFolderFiles;
+          }
+        }
       }
     }
 
