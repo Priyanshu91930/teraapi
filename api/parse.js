@@ -1774,17 +1774,31 @@ export default async function handler(req, res) {
         console.log(`[Parse] Direct TeraBox CDN dlink resolved: ${dlink.substring(0, 80)}...`);
       }
 
-      // Failsafe Fallback: If direct dlink recovery failed (due to 400141 / 400310 rate limits), construct proxied download URL via /download.php endpoint
+      // Failsafe Fallback: Resolve 302 redirect on raw /share/download endpoint to get direct TeraBox CDN link
       if (!dlink && sign && timestamp && (listData.share_id || listData.shareid) && listData.uk && targetFsId) {
         try {
           const shareId = listData.share_id || listData.shareid || '';
           const rawDownloadUrl = `${anonApp.params.whost}/share/download?app_id=250528&web=1&channel=dubian-wap&clienttype=0&fid_list=%5B${targetFsId}%5D&uk=${listData.uk}&shareid=${shareId}&sign=${sign}&timestamp=${timestamp}&type=dlink`;
-          const safeName = file.server_filename || 'video.mp4';
           const sessionCookie = ndusToken ? buildCookie(ndusToken, browserId) : `browserid=${browserId}`;
-          dlink = `${currentBaseUrl}/download.php?url=${encodeURIComponent(rawDownloadUrl)}&filename=${encodeURIComponent(safeName)}&cookie=${encodeURIComponent(sessionCookie)}`;
-          console.log(`[Parse] Failsafe proxy dlink constructed: ${dlink.substring(0, 80)}...`);
+
+          // Attempt 302 redirect resolution first to extract direct CDN download URL
+          const directLocation = await resolveCdnUrl(rawDownloadUrl, {
+            'User-Agent': TB_UA,
+            'Referer': `${anonApp.params.whost}/sharing/link?surl=`,
+            'Cookie': sessionCookie
+          });
+
+          if (directLocation && directLocation !== rawDownloadUrl && directLocation.startsWith('http') && !directLocation.includes('/share/download')) {
+            dlink = directLocation;
+            console.log(`[Parse] Direct TeraBox CDN dlink resolved via 302 redirect: ${dlink.substring(0, 80)}...`);
+          } else {
+            // Proxied download URL via /download.php endpoint as secondary fallback
+            const safeName = file.server_filename || 'video.mp4';
+            dlink = `${currentBaseUrl}/download.php?url=${encodeURIComponent(rawDownloadUrl)}&filename=${encodeURIComponent(safeName)}&cookie=${encodeURIComponent(sessionCookie)}`;
+            console.log(`[Parse] Failsafe proxy dlink constructed: ${dlink.substring(0, 80)}...`);
+          }
         } catch (fallbackErr) {
-          console.error('[Parse] Failsafe proxy dlink construction failed:', fallbackErr.message);
+          console.error('[Parse] Direct CDN / Proxy dlink construction failed:', fallbackErr.message);
         }
       }
 
