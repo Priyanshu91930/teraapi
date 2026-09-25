@@ -33,7 +33,7 @@
         "mongoose": "^9.9.1",
         "puppeteer": "^22.15.0",
         "tough-cookie": "^6.0.2",
-        "undici": "^5.28.4"
+        "undici": "^8.11.0"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
