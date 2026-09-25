@@ -1797,7 +1797,7 @@ export default async function handler(req, res) {
         console.log(`[Parse] Direct TeraBox CDN dlink resolved: ${dlink.substring(0, 80)}...`);
       }
 
-      // Failsafe Fallback: Resolve 302 redirect on raw /share/download endpoint to get direct TeraBox CDN link
+      // Direct TeraBox Download URL resolution (0-bandwidth client download)
       if (!dlink && sign && timestamp && (listData.share_id || listData.shareid) && listData.uk && targetFsId) {
         try {
           const shareId = listData.share_id || listData.shareid || '';
@@ -1815,13 +1815,12 @@ export default async function handler(req, res) {
             dlink = directLocation;
             console.log(`[Parse] Direct TeraBox CDN dlink resolved via 302 redirect: ${dlink.substring(0, 80)}...`);
           } else {
-            // Proxied download URL via /download.php endpoint as secondary fallback
-            const safeName = file.server_filename || 'video.mp4';
-            dlink = `${currentBaseUrl}/download.php?url=${encodeURIComponent(rawDownloadUrl)}&filename=${encodeURIComponent(safeName)}&cookie=${encodeURIComponent(sessionCookie)}`;
-            console.log(`[Parse] Failsafe proxy dlink constructed: ${dlink.substring(0, 80)}...`);
+            // Use direct raw TeraBox download endpoint (Android client will follow 302 redirect directly, consuming 0 Vercel bandwidth)
+            dlink = rawDownloadUrl;
+            console.log(`[Parse] Direct TeraBox raw download URL assigned: ${dlink.substring(0, 80)}...`);
           }
         } catch (fallbackErr) {
-          console.error('[Parse] Direct CDN / Proxy dlink construction failed:', fallbackErr.message);
+          console.error('[Parse] Direct TeraBox dlink assignment failed:', fallbackErr.message);
         }
       }
 
