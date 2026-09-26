@@ -1283,11 +1283,12 @@ export default async function handler(req, res) {
           await LinkCache.deleteOne({ shortUrl: strippedShortUrl });
         } else if (cacheAgeMs < 10 * 60 * 1000) {
           if (cachedList.length > 1 && !isVipClient) {
-            console.log(`[Cache Hit - Folder Restricted] Non-VIP request for folder surl: ${strippedShortUrl}. Serving 1-file preview.`);
-            return res.status(200).json({
-              ...cachedRecord.response,
-              isFolderRestricted: true,
-              list: [cachedList[0]]
+            console.log(`[Cache Hit - VIP Required] Non-VIP request for folder surl: ${strippedShortUrl}. Rejecting with VIP_REQUIRED_FOR_FOLDERS.`);
+            return res.status(403).json({
+              success: false,
+              code: 'VIP_REQUIRED_FOR_FOLDERS',
+              error: 'Folders contain multiple files. Downloading full folders is exclusive to VIP members.',
+              message: 'Folders contain multiple files. Downloading full folders is exclusive to VIP members.'
             });
           }
           console.log(`[Cache Hit] Serving fresh cached response (${Math.round(cacheAgeMs/60000)}m old) for surl: ${strippedShortUrl}`);
