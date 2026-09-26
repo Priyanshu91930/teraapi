@@ -899,7 +899,7 @@ async function resolveDlinkViaShareDownload(whost, sign, timestamp, shareId, uk,
 // Helper to recursively fetch all files inside a directory (folder) in a TeraBox share link
 // Uses the TeraBoxApp's shortUrlList method with undici TLS connector to bypass Cloudflare
 async function fetchFolderFiles(app, shortUrl, dirPath, shareId, uk, browserId, ndusToken, depth = 0) {
-  if (depth > 2) {
+  if (depth > 5) {
     console.warn(`[Folder Fetch] Max depth reached at: ${dirPath}`);
     return [];
   }
@@ -909,8 +909,13 @@ async function fetchFolderFiles(app, shortUrl, dirPath, shareId, uk, browserId, 
     const j = await app.shortUrlList(rawShortUrl, dirPath);
     console.log(`[Folder Fetch] Response for ${dirPath}: errno=${j && j.errno}, count=${j && j.list && j.list.length}`);
     if (j && j.errno === 0 && Array.isArray(j.list)) {
-      // Separate dirs and files
-      const dirs = j.list.filter(item => Number(item.isdir) === 1);
+      const normalizedDirPath = (dirPath || '').replace(/\/+$/, '');
+      // Separate subdirectories (excluding self-referencing path) and files
+      const dirs = j.list.filter(item => {
+        if (Number(item.isdir) !== 1) return false;
+        const itemPath = (item.path || '').replace(/\/+$/, '');
+        return itemPath !== normalizedDirPath;
+      });
       const files = j.list.filter(item => Number(item.isdir) !== 1);
 
       // Fetch all subdirs in parallel
