@@ -830,7 +830,7 @@ async function sendTelegramTokenAlert() {
 // TeraBox stopped returning dlink in share/list for many sessions; this signed
 // endpoint still returns it for valid logged-in (ndus) sessions.
 // Returns '' on any failure.
-async function resolveDlinkViaShareDownload(whost, sign, timestamp, shareId, uk, fsId, cookie, jsToken = '') {
+async function resolveDlinkViaShareDownload(whost, sign, timestamp, shareId, uk, fsId, cookie, jsToken = '', shortUrl = '') {
   try {
     const dlUrl = new URL(`${whost}/share/download`);
     const params = {
@@ -840,13 +840,12 @@ async function resolveDlinkViaShareDownload(whost, sign, timestamp, shareId, uk,
       clienttype: '0',
       shareid: String(shareId),
       uk: String(uk),
-      fid_list: JSON.stringify([fsId]),
       sign: sign || '',
       timestamp: String(timestamp || ''),
-      product: 'share',
-      nozip: '0',
-      type: 'dlink',
+      fs_id: String(fsId),
+      root: '1',
     };
+    if (shortUrl) params.shorturl = '1' + String(shortUrl).replace(/^1/, '');
     if (jsToken) params.jsToken = jsToken;
     dlUrl.search = new URLSearchParams(params);
     const { request } = await import('undici');
@@ -878,9 +877,10 @@ async function resolveDlinkViaShareDownload(whost, sign, timestamp, shareId, uk,
     }
     
     const j = await res.body.json();
-    if (j && j.errno === 0 && j.dlink) {
-      console.log('[Parse] dlink recovered via /share/download');
-      return j.dlink;
+    const resolvedDlink = (j && j.dlink) || (j && j.urls && j.urls[0] && (j.urls[0].url || j.urls[0].dlink)) || '';
+    if (j && j.errno === 0 && resolvedDlink) {
+      console.log('[Parse] dlink recovered via /share/download:', resolvedDlink.substring(0, 80));
+      return resolvedDlink;
     }
     console.log(`[Parse] /share/download fallback failed: errno=${j && j.errno} errmsg=${j && j.errmsg}`);
     
@@ -1724,12 +1724,11 @@ export default async function handler(req, res) {
             clienttype: '0',
             shareid: String(listData.share_id || listData.shareid),
             uk: String(listData.uk),
-            fid_list: JSON.stringify([targetFsId]),
+            fs_id: String(targetFsId),
+            shorturl: '1' + strippedShortUrl,
+            root: '1',
             sign: sign || '',
             timestamp: String(timestamp || ''),
-            product: 'share',
-            nozip: '0',
-            type: 'dlink',
           };
           if (activeJsToken) dlParams.jsToken = activeJsToken;
           dlUrl.search = new URLSearchParams(dlParams);
@@ -1764,8 +1763,9 @@ export default async function handler(req, res) {
             }
 
             const j = await res.body.json();
-            if (j && j.errno === 0 && j.dlink) {
-              dlink = j.dlink;
+            const resolvedDlink = (j && j.dlink) || (j && j.urls && j.urls[0] && (j.urls[0].url || j.urls[0].dlink)) || '';
+            if (j && j.errno === 0 && resolvedDlink) {
+              dlink = resolvedDlink;
             } else {
               console.log(`[Parse] /share/download fallback failed: errno=${j && j.errno}`);
               if (j && (j.errno === 400310 || String(j.errmsg || '').includes('verify_v2'))) {
@@ -1783,7 +1783,7 @@ export default async function handler(req, res) {
             dlink = await resolveDlinkViaShareDownload(
               anonApp.params.whost, sign, timestamp,
               listData.share_id || listData.shareid, listData.uk,
-              targetFsId, `browserid=${browserId}`, activeJsToken
+              targetFsId, `browserid=${browserId}`, activeJsToken, strippedShortUrl
             );
           } catch (anonErr) {
             console.log('[Parse] Anonymous dlink recovery error:', anonErr.message || anonErr);
@@ -1813,7 +1813,7 @@ export default async function handler(req, res) {
         try {
           const shareId = listData.share_id || listData.shareid || '';
           const activeJsToken = (premiumApp && premiumApp.data && premiumApp.data.jsToken) || '';
-          let rawDownloadUrl = `${anonApp.params.whost}/share/download?app_id=250528&web=1&channel=dubian-wap&clienttype=0&fid_list=%5B${targetFsId}%5D&uk=${listData.uk}&shareid=${shareId}&sign=${sign}&timestamp=${timestamp}&type=dlink`;
+          let rawDownloadUrl = `${anonApp.params.whost}/share/download?app_id=250528&web=1&channel=dubian-wap&clienttype=0&fs_id=${targetFsId}&shorturl=1${strippedShortUrl}&root=1&uk=${listData.uk}&shareid=${shareId}&sign=${sign}&timestamp=${timestamp}`;
           if (activeJsToken) {
             rawDownloadUrl += `&jsToken=${encodeURIComponent(activeJsToken)}`;
           }
