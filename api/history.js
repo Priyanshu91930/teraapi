@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { connectToDatabase, UserHistory } from '../db.js';
 
 export default async function historyHandler(req, res) {
@@ -98,7 +99,11 @@ export default async function historyHandler(req, res) {
       }
 
       if (id) {
-        await UserHistory.deleteOne({ _id: id, email: cleanEmail });
+        if (mongoose.Types.ObjectId.isValid(id)) {
+          await UserHistory.deleteOne({ _id: id, email: cleanEmail });
+        } else {
+          await UserHistory.deleteOne({ name: id, email: cleanEmail });
+        }
         return res.status(200).json({ success: true, message: 'Item deleted' });
       }
 
