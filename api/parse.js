@@ -1710,6 +1710,22 @@ export default async function handler(req, res) {
       let dlink = file.dlink || '';
       let verifyV2Url = '';
 
+      if (!dlink && targetFsId && premiumApp) {
+        try {
+          console.log(`[Parse] Attempting premiumApp.download for fs_id: ${targetFsId}...`);
+          const dlRes = await premiumApp.download([targetFsId]);
+          if (dlRes && dlRes.errno === 0) {
+            const rawDl = (dlRes.dlink && Array.isArray(dlRes.dlink) && dlRes.dlink[0] && dlRes.dlink[0].dlink) || (typeof dlRes.dlink === 'string' ? dlRes.dlink : '');
+            if (rawDl) {
+              dlink = rawDl;
+              console.log(`[Parse] premiumApp.download succeeded for fs_id ${targetFsId}: ${dlink.substring(0, 80)}...`);
+            }
+          }
+        } catch (dlErr) {
+          console.log(`[Parse] premiumApp.download failed for fs_id ${targetFsId}:`, dlErr.message);
+        }
+      }
+
       if (!dlink && sign && timestamp && (listData.share_id || listData.shareid) && listData.uk && targetFsId) {
         const activeJsToken = (premiumApp && premiumApp.data && premiumApp.data.jsToken) || '';
         if (ndusToken) {
