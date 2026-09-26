@@ -39,10 +39,21 @@ export default async function handler(req, res) {
         const paymentId = entity.id || 'pay_' + Date.now();
         const notes = entity.notes || {};
         const email = (notes.email || entity.email || 'unknown@example.com').toLowerCase().trim();
-        const plan = notes.plan || 'monthly';
+        let plan = (notes.plan || '').toLowerCase();
+
+        // Smart fallback: If plan was not explicitly passed in notes, infer from Razorpay amount
+        if (!plan || (plan !== 'weekly' && plan !== 'monthly' && plan !== 'quarterly' && plan !== 'yearly')) {
+            const amountInRupees = entity.amount ? entity.amount / 100 : 0;
+            if (amountInRupees === 29 || amountInRupees === 49) {
+                plan = 'weekly';
+            } else if (amountInRupees === 499 || amountInRupees === 149) {
+                plan = 'yearly';
+            } else {
+                plan = 'monthly';
+            }
+        }
 
         // ── IDEMPOTENCY CHECK ──────────────────────────────────────────────────
-        // Prevent duplicate premium activations from repeated webhook deliveries
         const paymentIdempotencyKey = `${paymentId}_${event}`;
         const alreadyProcessed = await ProcessedPayment.findOne({ paymentId: paymentIdempotencyKey });
         if (alreadyProcessed) {

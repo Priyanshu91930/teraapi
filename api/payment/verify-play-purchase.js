@@ -19,7 +19,23 @@ export default async function handler(req, res) {
   }
 
   const userEmail = email.toLowerCase().trim();
-  const selectedPlan = (plan || 'monthly').toLowerCase();
+  let selectedPlan = (plan || '').toLowerCase();
+
+  // Smart SKU matching: Extract exact plan from Google Play productId
+  if (productId) {
+    const pid = String(productId).toLowerCase();
+    if (pid.includes('weekly') || pid === 'weekly_pass') {
+      selectedPlan = 'weekly';
+    } else if (pid.includes('yearly') || pid === 'yearly_vip') {
+      selectedPlan = 'yearly';
+    } else if (pid.includes('monthly') || pid === 'monthly_pro') {
+      selectedPlan = 'monthly';
+    }
+  }
+
+  if (!selectedPlan) {
+    selectedPlan = 'monthly';
+  }
 
   try {
     await connectToDatabase();
