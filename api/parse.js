@@ -1324,7 +1324,7 @@ export default async function handler(req, res) {
       console.log(`[ROUTER] Using tier from header: ${tierHeader}`);
     }
 
-    // ── ANDROID APP / TELEGRAM BOT CLIENT DETECTION ──
+    // ── ANDROID APP / TELEGRAM BOT CLIENT DETECTION (UNLIMITED PARSING) ──
     const isAppClient = (
       req.query.from === 'app' || 
       req.query.from === 'bot' || 
@@ -1334,14 +1334,12 @@ export default async function handler(req, res) {
       req.headers['x-client-source'] === 'app'
     );
 
-    const isVipHeader = req.headers['x-user-tier'] === 'premium' || req.query.is_vip === 'true';
-
     if (isAppClient) {
-      if (!isVipHeader) {
-        isPremium = false;
-        entitlement.isPremium = false;
-      }
-      console.log(`[ROUTER] App/Bot client detected (VIP: ${isVipHeader}).`);
+      isPremium = true;
+      entitlement.isPremium = true;
+      entitlement.plan = 'unlimited_client';
+      entitlement.userType = 'app_or_bot_user';
+      console.log('[ROUTER] App/Bot client detected. Premium NDUS routing enabled for fast link parsing.');
     }
 
     // ── BLOCKED IF TRIALS EXHAUSTED OR PLAN EXPIRED (WEBSITE USERS ONLY) ──
@@ -1626,9 +1624,7 @@ export default async function handler(req, res) {
           req.headers['x-is-vip'] === 'true' ||
           req.query.is_vip === 'true' ||
           req.query.is_vip === '1' ||
-          req.query.user_tier === 'premium' ||
-          isAppClient ||
-          (entitlement && entitlement.isPremium)
+          req.query.user_tier === 'premium'
         );
 
         if (!isUserVip) {
