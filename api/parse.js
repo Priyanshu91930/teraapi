@@ -838,12 +838,15 @@ async function resolveDlinkViaShareDownload(whost, sign, timestamp, shareId, uk,
       web: '1',
       channel: 'dubian-wap',
       clienttype: '0',
+      is_vip: '1',
+      vip: '1',
       shareid: String(shareId),
       uk: String(uk),
+      fid: String(fsId),
+      fs_id: String(fsId),
       sign: sign || '',
       timestamp: String(timestamp || ''),
-      fs_id: String(fsId),
-      root: '1',
+      type: 'dlink',
     };
     if (shortUrl) params.shorturl = '1' + String(shortUrl).replace(/^1/, '');
     if (jsToken) params.jsToken = jsToken;
@@ -1913,6 +1916,15 @@ export default async function handler(req, res) {
               if (m3u8Text && (m3u8Text.includes('#EXTM3U8') || m3u8Text.includes('#EXTM3U'))) {
                 m3u8StreamUrl = `data:application/x-mpegURL;base64,${Buffer.from(m3u8Text).toString('base64')}`;
                 console.log(`[Parse] TeraBox Native M3U8 HLS stream resolved (${sType}, ${m3u8Text.length} bytes)`);
+
+                // If dlink is missing or legacy /share/download fallback, extract direct CDN URL from M3U8 playlist
+                if (!dlink || dlink.includes('/share/download')) {
+                  const extractedCdnUrl = m3u8Text.split('\n').map(s => s.trim()).find(s => s.startsWith('http://') || s.startsWith('https://'));
+                  if (extractedCdnUrl) {
+                    dlink = extractedCdnUrl;
+                    console.log(`[Parse] Direct TeraBox CDN dlink extracted from M3U8 playlist: ${dlink.substring(0, 80)}...`);
+                  }
+                }
                 break;
               }
             }
