@@ -1609,7 +1609,8 @@ export default async function handler(req, res) {
           req.query.is_vip === 'true' ||
           req.query.is_vip === '1' ||
           req.query.user_tier === 'premium' ||
-          (entitlement && entitlement.isPremium && entitlement.userType !== 'free_trial' && entitlement.userType !== 'app_or_bot_user')
+          isAppClient ||
+          (entitlement && entitlement.isPremium)
         );
 
         if (!isUserVip) {

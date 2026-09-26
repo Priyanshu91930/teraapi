@@ -2632,7 +2632,11 @@ class TeraBoxApp {
                 dlink: 1,
             });
         
-            url.searchParams.append('root', '1');
+            if (remoteDir) {
+                url.searchParams.append('root', '0');
+            } else {
+                url.searchParams.append('root', '1');
+            }
             
             const connector = buildConnector({ ciphers: tls.DEFAULT_CIPHERS + ':!ECDHE-RSA-AES128-SHA' });
             const client = new Client(this.params.whost, { connect: connector });
