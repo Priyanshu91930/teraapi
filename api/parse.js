@@ -1271,6 +1271,8 @@ export default async function handler(req, res) {
       if (cachedRecord && cachedRecord.response) {
         const cacheAgeMs = cachedRecord.createdAt ? (Date.now() - new Date(cachedRecord.createdAt).getTime()) : 99999999;
         const cachedList = cachedRecord.response && cachedRecord.response.list ? cachedRecord.response.list : [];
+        const isVipClient = req.headers['x-user-tier'] === 'premium' || req.query.is_vip === 'true';
+
         const shouldPurgeCache = req.query.nocache === 'true' || req.query.refresh === '1' || cachedList.some(item => {
           // Purge if dlink is missing, contains an error, or contains legacy download.php proxy fallback
           return !item.dlink || item.dlink.startsWith('ERROR') || item.dlink.includes('download.php');
@@ -1280,6 +1282,14 @@ export default async function handler(req, res) {
           console.log(`[Cache Purge] Purging cached record with invalid/proxy dlink for surl: ${strippedShortUrl}`);
           await LinkCache.deleteOne({ shortUrl: strippedShortUrl });
         } else if (cacheAgeMs < 10 * 60 * 1000) {
+          if (cachedList.length > 1 && !isVipClient) {
+            console.log(`[Cache Hit - Folder Restricted] Non-VIP request for folder surl: ${strippedShortUrl}. Serving 1-file preview.`);
+            return res.status(200).json({
+              ...cachedRecord.response,
+              isFolderRestricted: true,
+              list: [cachedList[0]]
+            });
+          }
           console.log(`[Cache Hit] Serving fresh cached response (${Math.round(cacheAgeMs/60000)}m old) for surl: ${strippedShortUrl}`);
           return res.status(200).json(cachedRecord.response);
         } else {
@@ -1296,7 +1306,7 @@ export default async function handler(req, res) {
     let isPremium = entitlement.isPremium;
     console.log(`[ROUTER] apiKey=${apiKey ? apiKey.substring(0,8)+'...' : 'none'} entitlement=${isPremium ? 'paid('+entitlement.plan+')' : 'free('+entitlement.reason+')'}`);
     
-    // Support x-user-tier header from Firebase Auth frontend
+    // Support x-user-tier header from Firebase Auth / App frontend
     const tierHeader = req.headers['x-user-tier'];
     if (tierHeader && (tierHeader === 'premium' || tierHeader === 'free')) {
       if (tierHeader === 'premium') {
@@ -1313,7 +1323,7 @@ export default async function handler(req, res) {
       console.log(`[ROUTER] Using tier from header: ${tierHeader}`);
     }
 
-    // ── ANDROID APP / TELEGRAM BOT CLIENT DETECTION (UNLIMITED PARSING) ──
+    // ── ANDROID APP / TELEGRAM BOT CLIENT DETECTION ──
     const isAppClient = (
       req.query.from === 'app' || 
       req.query.from === 'bot' || 
@@ -1323,12 +1333,14 @@ export default async function handler(req, res) {
       req.headers['x-client-source'] === 'app'
     );
 
+    const isVipHeader = req.headers['x-user-tier'] === 'premium' || req.query.is_vip === 'true';
+
     if (isAppClient) {
-      isPremium = true;
-      entitlement.isPremium = true;
-      entitlement.plan = 'unlimited_client';
-      entitlement.userType = 'app_or_bot_user';
-      console.log('[ROUTER] App/Bot client detected. Premium NDUS routing enabled without 3-link daily limit restrictions.');
+      if (!isVipHeader) {
+        isPremium = false;
+        entitlement.isPremium = false;
+      }
+      console.log(`[ROUTER] App/Bot client detected (VIP: ${isVipHeader}).`);
     }
 
     // ── BLOCKED IF TRIALS EXHAUSTED OR PLAN EXPIRED (WEBSITE USERS ONLY) ──
