@@ -830,10 +830,10 @@ async function sendTelegramTokenAlert() {
 // TeraBox stopped returning dlink in share/list for many sessions; this signed
 // endpoint still returns it for valid logged-in (ndus) sessions.
 // Returns '' on any failure.
-async function resolveDlinkViaShareDownload(whost, sign, timestamp, shareId, uk, fsId, cookie) {
+async function resolveDlinkViaShareDownload(whost, sign, timestamp, shareId, uk, fsId, cookie, jsToken = '') {
   try {
     const dlUrl = new URL(`${whost}/share/download`);
-    dlUrl.search = new URLSearchParams({
+    const params = {
       app_id: '250528',
       web: '1',
       channel: 'dubian-wap',
@@ -846,7 +846,9 @@ async function resolveDlinkViaShareDownload(whost, sign, timestamp, shareId, uk,
       product: 'share',
       nozip: '0',
       type: 'dlink',
-    });
+    };
+    if (jsToken) params.jsToken = jsToken;
+    dlUrl.search = new URLSearchParams(params);
     const { request } = await import('undici');
     const proxyDispatcher = getNextProxyAgent();
 
@@ -1709,12 +1711,13 @@ export default async function handler(req, res) {
       let verifyV2Url = '';
 
       if (!dlink && sign && timestamp && (listData.share_id || listData.shareid) && listData.uk && targetFsId) {
+        const activeJsToken = (premiumApp && premiumApp.data && premiumApp.data.jsToken) || '';
         if (ndusToken) {
           const sessionCookie = buildCookie(ndusToken, browserId);
           
           // Fetch raw response to check for verify_url on failure
           const dlUrl = new URL(`${anonApp.params.whost}/share/download`);
-          dlUrl.search = new URLSearchParams({
+          const dlParams = {
             app_id: '250528',
             web: '1',
             channel: 'dubian-wap',
@@ -1727,7 +1730,9 @@ export default async function handler(req, res) {
             product: 'share',
             nozip: '0',
             type: 'dlink',
-          });
+          };
+          if (activeJsToken) dlParams.jsToken = activeJsToken;
+          dlUrl.search = new URLSearchParams(dlParams);
           
           try {
             const { request: uRequest } = await import('undici');
@@ -1778,7 +1783,7 @@ export default async function handler(req, res) {
             dlink = await resolveDlinkViaShareDownload(
               anonApp.params.whost, sign, timestamp,
               listData.share_id || listData.shareid, listData.uk,
-              targetFsId, `browserid=${browserId}`
+              targetFsId, `browserid=${browserId}`, activeJsToken
             );
           } catch (anonErr) {
             console.log('[Parse] Anonymous dlink recovery error:', anonErr.message || anonErr);
@@ -1807,7 +1812,11 @@ export default async function handler(req, res) {
       if (!dlink && sign && timestamp && (listData.share_id || listData.shareid) && listData.uk && targetFsId) {
         try {
           const shareId = listData.share_id || listData.shareid || '';
-          const rawDownloadUrl = `${anonApp.params.whost}/share/download?app_id=250528&web=1&channel=dubian-wap&clienttype=0&fid_list=%5B${targetFsId}%5D&uk=${listData.uk}&shareid=${shareId}&sign=${sign}&timestamp=${timestamp}&type=dlink`;
+          const activeJsToken = (premiumApp && premiumApp.data && premiumApp.data.jsToken) || '';
+          let rawDownloadUrl = `${anonApp.params.whost}/share/download?app_id=250528&web=1&channel=dubian-wap&clienttype=0&fid_list=%5B${targetFsId}%5D&uk=${listData.uk}&shareid=${shareId}&sign=${sign}&timestamp=${timestamp}&type=dlink`;
+          if (activeJsToken) {
+            rawDownloadUrl += `&jsToken=${encodeURIComponent(activeJsToken)}`;
+          }
           const sessionCookie = ndusToken ? buildCookie(ndusToken, browserId) : `browserid=${browserId}`;
 
           // Attempt 302 redirect resolution first to extract direct CDN download URL
